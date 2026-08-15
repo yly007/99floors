@@ -91,6 +91,7 @@ namespace NinetyNine
         private float _storedCellCharge;
         private float _objectiveRevealUntil;
         private float _controlsHintUntil;
+        private float _powerNoticeUntil;
         private float _masterVolume = 1f;
         private float _brightness = 1f;
         private int _currentFloor;
@@ -102,6 +103,10 @@ namespace NinetyNine
         private int _automationWorstStopError;
         private int _scrap;
         private int _loopCount;
+        private int _lastPowerNoticeBucket;
+        private int _cachedHudFloor = -1;
+        private int _cachedHudPower = -1;
+        private int _cachedHudSeconds = -1;
         private bool _braking;
         private bool _hasFlashlight;
         private bool _flashlightOn;
@@ -120,12 +125,17 @@ namespace NinetyNine
         private bool _notebookOpen;
         private bool _lowPowerThoughtShown;
         private bool _monsterThoughtShown;
+        private bool _powerNoticePositive;
         private System.Random _gameplayRandom;
         private int _resolutionIndex = 2;
         private int _qualityIndex = 3;
         private string _dialogueText = string.Empty;
         private string _endingTitle = string.Empty;
         private string _endingBody = string.Empty;
+        private string _powerNoticeText = string.Empty;
+        private string _cachedHudFloorText = "99";
+        private string _cachedHudPowerText = "19 / 26";
+        private string _cachedHudTimeText = "30:00";
         private float _floorMovementPenalty = 1f;
 
         public int RunSeed { get; private set; }
@@ -388,22 +398,48 @@ namespace NinetyNine
             Debug.Log("EVACUATION_STORY_ACT_TWO_TEST=" + (storyActTwoPassed ? "PASS" : "FAIL"));
             Debug.Log("EVACUATION_STORY_ACT_THREE_TEST=" + (storyActThreePassed ? "PASS" : "FAIL"));
             Debug.Log("EVACUATION_FOOTSTEP_GATE_TEST=" + (_audio.VerifyFootstepGate() ? "PASS" : "FAIL"));
+            ChangePower(_power - 4f, "启动测试", false);
+            bool discretePowerNoticePassed = _powerNoticeText.Contains("启动测试  -4") &&
+                _lastPowerNoticeBucket == Mathf.CeilToInt(_power);
+            string noticeBeforeContinuousDrain = _powerNoticeText;
+            ChangePower(_power - 0.1f, "运行耗电", true);
+            bool subUnitDrainSuppressed = _powerNoticeText == noticeBeforeContinuousDrain;
+            ChangePower(Mathf.Floor(_power) - 0.01f, "运行耗电", true);
+            bool continuousPowerNoticePassed = _powerNoticeText.Contains("运行耗电  -1");
+            ChangePower(19f, "测试复位", false);
+            Debug.Log("EVACUATION_POWER_NOTICE_TEST=" +
+                (discretePowerNoticePassed && subUnitDrainSuppressed && continuousPowerNoticePassed
+                    ? "PASS" : "FAIL"));
+            Debug.Log("EVACUATION_INITIAL_BRIEFING_TEST=" +
+                (InitialBriefingVisible() ? "PASS" : "FAIL"));
 
             bool safeStartPassed = _world.Monster == null &&
-                FindObjectsOfType<EvacuationNpc>().Length == 1;
+                FindObjectsOfType<EvacuationNpc>().Length == 0;
             Debug.Log("EVACUATION_START_FLOOR_SAFE_TEST=" + (safeStartPassed ? "PASS" : "FAIL"));
-            EvacuationNpc startNpc = FindObjectOfType<EvacuationNpc>();
-            bool questionTrustPassed = false;
-            if (startNpc != null)
+            EvacuationInteractable[] startInteractables = FindObjectsOfType<EvacuationInteractable>();
+            int startItemCount = 0;
+            bool startPowerCell = false;
+            for (int i = 0; i < startInteractables.Length; i++)
             {
-                int trustBeforeQuestion = startNpc.Trust;
-                string ignoredClue;
-                startNpc.Question(out ignoredClue);
-                startNpc.Question(out ignoredClue);
-                int expectedTrust = trustBeforeQuestion + (startNpc.IsMimic ? 0 : 1);
-                questionTrustPassed = startNpc.Trust == expectedTrust;
+                EvacuationInteractable value = startInteractables[i];
+                if (value == null || value.Action != EvacuationAction.Item) continue;
+                startItemCount++;
+                startPowerCell |= value.ItemKind == EvacuationItemKind.PowerCell;
             }
-            Debug.Log("EVACUATION_NPC_QUESTION_TRUST_TEST=" + (questionTrustPassed ? "PASS" : "FAIL"));
+            Debug.Log("EVACUATION_START_FLOOR_SINGLE_CELL_TEST=" +
+                (startItemCount == 1 && startPowerCell ? "PASS" : "FAIL") +
+                " ITEMS=" + startItemCount);
+            GameObject questionNpcObject = new GameObject("QuestionTrustTest");
+            questionNpcObject.AddComponent<CharacterController>();
+            EvacuationNpc questionNpc = questionNpcObject.AddComponent<EvacuationNpc>();
+            questionNpc.Initialize(this, _player, false, 80);
+            int trustBeforeQuestion = questionNpc.Trust;
+            string ignoredClue;
+            questionNpc.Question(out ignoredClue);
+            questionNpc.Question(out ignoredClue);
+            bool questionTrustPassed = questionNpc.Trust == trustBeforeQuestion + 1;
+            Debug.Log("EVACUATION_NPC_QUESTION_TRUST_TEST=" +
+                (questionTrustPassed ? "PASS" : "FAIL"));
             bool passengerTargetPassed = IsPassengerDestinationMatch(91, 91) &&
                 IsPassengerDestinationMatch(90, 91) && !IsPassengerDestinationMatch(89, 91);
             Debug.Log("EVACUATION_PASSENGER_TARGET_TEST=" + (passengerTargetPassed ? "PASS" : "FAIL"));
@@ -429,11 +465,12 @@ namespace NinetyNine
             SetPaused(false);
             pausePassed &= !_paused && Mathf.Approximately(Time.timeScale, 1f) && _player.CanMove;
             Debug.Log("EVACUATION_PAUSE_TEST=" + (pausePassed ? "PASS" : "FAIL"));
-            Collider npcCollider = startNpc != null ? startNpc.GetComponent<Collider>() : null;
+            Collider npcCollider = questionNpc.GetComponent<Collider>();
             CharacterController playerController = _player.GetComponent<CharacterController>();
             bool npcCollisionPassed = npcCollider != null && playerController != null &&
                 Physics.GetIgnoreCollision(npcCollider, playerController);
             Debug.Log("EVACUATION_NPC_COLLISION_TEST=" + (npcCollisionPassed ? "PASS" : "FAIL"));
+            Destroy(questionNpcObject);
             EvacuationInteractable[] interactables = FindObjectsOfType<EvacuationInteractable>();
             bool pickupHitboxPassed = Array.Exists(interactables, value => value != null &&
                 value.Action == EvacuationAction.Item && value.GetComponent<BoxCollider>() != null &&
@@ -582,6 +619,9 @@ namespace NinetyNine
                 yield return null;
             }
             _power = 19f;
+            _lastPowerNoticeBucket = Mathf.CeilToInt(_power);
+            _powerNoticeUntil = 0f;
+            _powerNoticeText = string.Empty;
 
             float observedMaxSpeed = 0f;
             bool observedOpeningAnimation = false;
@@ -892,6 +932,9 @@ namespace NinetyNine
             _floorFloat = 99f;
             _departureFloor = 99;
             _power = 19f;
+            _lastPowerNoticeBucket = Mathf.CeilToInt(_power);
+            _powerNoticeUntil = 0f;
+            _powerNoticeText = string.Empty;
             _remainingTime = RunDuration;
             _health = 100f;
             _doorIntegrity = MaxDoorIntegrity;
@@ -949,7 +992,8 @@ namespace NinetyNine
         private void UpdateStopped()
         {
             float parasiteDrain = _parasiteActive ? 0.14f : 0f;
-            _power = Mathf.Max(0f, _power - (IdleDrain + parasiteDrain) * Time.deltaTime);
+            ChangePower(_power - (IdleDrain + parasiteDrain) * Time.deltaTime,
+                _parasiteActive ? "异常漏电" : "停靠供电", true);
             if (_power <= 0f)
             {
                 Lose("困 死", "停靠电力耗尽。门机和照明停止工作，楼层里的脚步仍在靠近。");
@@ -973,7 +1017,7 @@ namespace NinetyNine
                 ShowSystemMessage("电量不足，驱动电机无法启动。", 2f);
                 return;
             }
-            _power -= StartCost;
+            ChangePower(_power - StartCost, "启动电机", false);
             _departureFloor = _currentFloor;
             _phase = EvacuationPhase.Descending;
             _braking = false;
@@ -1047,7 +1091,8 @@ namespace NinetyNine
             _floorFloat = Mathf.Max(1f, _floorFloat - _descentSpeed * Time.deltaTime);
             if (!_braking)
             {
-                _power = Mathf.Max(0f, _power - Mathf.Max(0f, previous - _floorFloat) * TravelCostPerFloor);
+                ChangePower(_power - Mathf.Max(0f, previous - _floorFloat) * TravelCostPerFloor,
+                    "运行耗电", true);
             }
             _currentFloor = Mathf.Clamp(Mathf.CeilToInt(_floorFloat), 1, 99);
             _player.SetElevatorMotion(_descentSpeed / MaxDescentSpeed, _braking);
@@ -1335,7 +1380,7 @@ namespace NinetyNine
             }
             else
             {
-                _power = Mathf.Max(0.01f, _power - 1f);
+                ChangePower(Mathf.Max(0.01f, _power - 1f), "未知线路", false);
                 if (_world.Monster != null) _world.Monster.TriggerChase();
                 ShowTransientMessage("电话接通的一刻，电梯掉了一格电。对方知道你在哪里。", 3f);
             }
@@ -1351,7 +1396,7 @@ namespace NinetyNine
                 if (_power < MaxPower - 0.5f)
                 {
                     float installedCharge = Mathf.Max(EmergencyCellCharge, _carriedCellCharge);
-                    _power = Mathf.Min(MaxPower, _power + installedCharge);
+                    ChangePower(_power + installedCharge, "安装电池", false);
                     _carryingCell = false;
                     _carriedCellCharge = 0f;
                     _audio.PlayPickup();
@@ -1374,7 +1419,8 @@ namespace NinetyNine
             if (_storedCell && _power < MaxPower - 0.5f)
             {
                 _storedCell = false;
-                _power = Mathf.Min(MaxPower, _power + Mathf.Max(EmergencyCellCharge, _storedCellCharge));
+                ChangePower(_power + Mathf.Max(EmergencyCellCharge, _storedCellCharge),
+                    "备用电池", false);
                 _storedCellCharge = 0f;
                 _audio.PlayPickup();
                 ShowSystemMessage("备用电池已接入。", 1.2f);
@@ -1392,7 +1438,7 @@ namespace NinetyNine
             }
             _hasFuse = false;
             _doorIntegrity = MaxDoorIntegrity;
-            _power = Mathf.Min(MaxPower, _power + 3f);
+            ChangePower(_power + 3f, "备用线路", false);
             _audio.PlayPickup();
             ShowSystemMessage("门控恢复，备用线路返还 3 点电力。", 1.5f);
         }
@@ -1418,7 +1464,7 @@ namespace NinetyNine
                 ShowTransientMessage("交换机需要一份零件，或至少 15 点手电电量。", 1.8f);
                 return;
             }
-            _power = Mathf.Min(MaxPower, _power + recovered);
+            ChangePower(_power + recovered, "电力交换", false);
             _audio.PlayPickup();
             EvacuationSignals.Emit(machine.transform.position, 11f, NoiseKind.Machinery);
             if (_world.Monster != null) _world.Monster.NotifyTheft(machine.transform.position);
@@ -1509,7 +1555,7 @@ namespace NinetyNine
             {
                 return;
             }
-            _power = Mathf.Max(0.01f, _power - MonsterRepelCost);
+            ChangePower(Mathf.Max(0.01f, _power - MonsterRepelCost), "门机过载", false);
             _doorIntegrity = Mathf.Max(0, _doorIntegrity - 1);
             _world.RemoveMonster(monster);
             _audio.PlayDoor();
@@ -1614,7 +1660,7 @@ namespace NinetyNine
                 else if (_dialogueNpc.Trade())
                 {
                     _scrap--;
-                    _power = Mathf.Min(MaxPower, _power + 3.5f);
+                    ChangePower(_power + 3.5f, "乘客交易", false);
                     _dialogueText = "对方接过零件，为电梯电池接入了一段备用线：+3.5 电力。";
                 }
                 else
@@ -1749,7 +1795,7 @@ namespace NinetyNine
                     IsPassengerDestinationMatch(_currentFloor, passenger.DestinationFloor))
                 {
                     int reward = Mathf.Clamp(4 + passenger.Trust, 5, 9);
-                    _power = Mathf.Min(MaxPower, _power + reward);
+                    ChangePower(_power + reward, "护送回报", false);
                     if (passenger.Archetype == NpcArchetype.Medic)
                     {
                         _health = Mathf.Min(100f, _health + 24f);
@@ -1888,7 +1934,7 @@ namespace NinetyNine
                 _loopCount++;
                 _currentFloor = 99;
                 _floorFloat = 99f;
-                _power = Mathf.Max(_power, 6f);
+                ChangePower(Mathf.Max(_power, 6f), "应急回路", false);
                 EvacuationFloorPlan loopPlan = _floorDirector.CreatePlan(
                     RunSeed ^ (_loopCount * 7919), 99, _power, _floorsVisited);
                 loopPlan.Theme = _loopCount % 2 == 0 ? EvacuationTheme.Hospital : EvacuationTheme.RedHall;
@@ -1972,6 +2018,35 @@ namespace NinetyNine
             LogRunResult("LOSS", title);
         }
 
+        private void ChangePower(float targetPower, string reason, bool continuous)
+        {
+            float previousPower = _power;
+            _power = Mathf.Clamp(targetPower, 0f, MaxPower);
+            if (Mathf.Approximately(previousPower, _power)) return;
+
+            int currentBucket = Mathf.CeilToInt(_power);
+            float displayedDelta;
+            if (continuous)
+            {
+                if (currentBucket == _lastPowerNoticeBucket) return;
+                displayedDelta = currentBucket - _lastPowerNoticeBucket;
+            }
+            else
+            {
+                displayedDelta = _power - previousPower;
+            }
+            _lastPowerNoticeBucket = currentBucket;
+            _powerNoticePositive = displayedDelta > 0f;
+            string sign = displayedDelta > 0f ? "+" : string.Empty;
+            string value = continuous
+                ? displayedDelta.ToString("0")
+                : displayedDelta.ToString("0.#");
+            _powerNoticeText = reason + "  " + sign + value +
+                "    当前 " + currentBucket + " / " + Mathf.CeilToInt(MaxPower);
+            _powerNoticeUntil = Time.unscaledTime + (continuous ? 1.05f : 1.7f);
+            if (_audio != null) _audio.PlayPowerTick(_powerNoticePositive);
+        }
+
         public void ShowTransientMessage(string value, float duration)
         {
             if (_narrative != null) _narrative.ShowThought(value, duration);
@@ -2027,8 +2102,7 @@ namespace NinetyNine
 
         private void DrawStatus(float scale)
         {
-            int minutes = Mathf.Max(0, Mathf.FloorToInt(_remainingTime / 60f));
-            int seconds = Mathf.Max(0, Mathf.FloorToInt(_remainingTime % 60f));
+            RefreshHudTelemetryText();
             float gap = 8f * scale;
             float floorWidth = 140f * scale;
             float powerWidth = 270f * scale;
@@ -2041,17 +2115,17 @@ namespace NinetyNine
             Rect powerCard = new Rect(floorCard.xMax + gap, y, powerWidth, height);
             Rect timeCard = new Rect(powerCard.xMax + gap, y, timeWidth, height);
 
-            DrawTelemetryCard(floorCard, "楼层", _currentFloor.ToString("00"),
+            DrawTelemetryCard(floorCard, "楼层", _cachedHudFloorText,
                 new Color(1f, 0.055f, 0.018f));
             Color powerColor = _power > LowPowerWarning
                 ? new Color(0.08f, 0.82f, 0.72f)
                 : new Color(1f, 0.08f, 0.02f);
             DrawTelemetryCard(powerCard, "电梯电量",
-                Mathf.CeilToInt(_power).ToString("00") + " / " + Mathf.CeilToInt(MaxPower), powerColor);
+                _cachedHudPowerText, powerColor);
             DrawBar(new Rect(powerCard.x + 14f * scale, powerCard.yMax - 9f * scale,
                 powerCard.width - 28f * scale, 4f * scale), _power / MaxPower, powerColor);
             DrawTelemetryCard(timeCard, "剩余时间",
-                minutes.ToString("00") + ":" + seconds.ToString("00"), new Color(1f, 0.44f, 0.08f));
+                _cachedHudTimeText, new Color(1f, 0.44f, 0.08f));
 
             Rect statusCard = new Rect(Screen.width * 0.5f - 180f * scale, 86f * scale,
                 360f * scale, 28f * scale);
@@ -2062,6 +2136,20 @@ namespace NinetyNine
                     : new Color(0.08f, 0.82f, 0.72f);
             DrawPanel(statusCard, statusColor);
             GUI.Label(statusCard, CurrentElevatorStatus(), _centerStyle);
+
+            if (Time.unscaledTime < _powerNoticeUntil && !string.IsNullOrEmpty(_powerNoticeText))
+            {
+                Color noticeColor = _powerNoticePositive
+                    ? new Color(0.08f, 0.9f, 0.66f)
+                    : new Color(1f, 0.18f, 0.04f);
+                Rect powerNotice = new Rect(Screen.width * 0.5f - 205f * scale, 120f * scale,
+                    410f * scale, 32f * scale);
+                DrawPanel(powerNotice, noticeColor);
+                Color old = GUI.color;
+                GUI.color = noticeColor;
+                GUI.Label(powerNotice, _powerNoticeText, _centerStyle);
+                GUI.color = old;
+            }
 
             float left = 24f * scale;
             float resourceY = Screen.height - 44f * scale;
@@ -2098,6 +2186,30 @@ namespace NinetyNine
             }
         }
 
+        private void RefreshHudTelemetryText()
+        {
+            if (_cachedHudFloor != _currentFloor)
+            {
+                _cachedHudFloor = _currentFloor;
+                _cachedHudFloorText = _currentFloor.ToString("00");
+            }
+            int powerValue = Mathf.CeilToInt(_power);
+            if (_cachedHudPower != powerValue)
+            {
+                _cachedHudPower = powerValue;
+                _cachedHudPowerText = powerValue.ToString("00") + " / " +
+                    Mathf.CeilToInt(MaxPower);
+            }
+            int timeValue = Mathf.Max(0, Mathf.FloorToInt(_remainingTime));
+            if (_cachedHudSeconds != timeValue)
+            {
+                _cachedHudSeconds = timeValue;
+                int minutes = timeValue / 60;
+                int seconds = timeValue % 60;
+                _cachedHudTimeText = minutes.ToString("00") + ":" + seconds.ToString("00");
+            }
+        }
+
         private void DrawObjective(float scale)
         {
             int passengerCount = 0;
@@ -2105,7 +2217,7 @@ namespace NinetyNine
             {
                 if (_passengers[i] != null) passengerCount++;
             }
-            if (!_notebookOpen && passengerCount == 0 &&
+            if (!InitialBriefingVisible() && !_notebookOpen && passengerCount == 0 &&
                 Time.unscaledTime >= _objectiveRevealUntil) return;
             float width = 340f * scale;
             float notebookExtra = _notebookOpen ? (_story.LatestClue != null ? 82f : 30f) : 0f;
@@ -2171,6 +2283,12 @@ namespace NinetyNine
             return mainGoal + "当前：探索楼层；准备离开时回到轿厢关闭电梯门。";
         }
 
+        private bool InitialBriefingVisible()
+        {
+            return _floorsVisited <= 1 && _currentFloor == 99 &&
+                _phase != EvacuationPhase.Won && _phase != EvacuationPhase.Lost;
+        }
+
         private void DrawTelemetryCard(Rect rect, string label, string value, Color accent)
         {
             DrawPanel(rect, accent);
@@ -2197,7 +2315,7 @@ namespace NinetyNine
                 return;
             }
 
-            float y = 122f * scale;
+            float y = Time.unscaledTime < _powerNoticeUntil ? 162f * scale : 122f * scale;
             if (_power <= LowPowerWarning)
             {
                 bool critical = _power <= CriticalPowerWarning;
@@ -2254,7 +2372,7 @@ namespace NinetyNine
                 GUI.Label(prompt, context, _centerStyle);
             }
 
-            if (_notebookOpen || Time.unscaledTime < _controlsHintUntil)
+            if (InitialBriefingVisible() || _notebookOpen || Time.unscaledTime < _controlsHintUntil)
             {
                 string controls = _hasFlashlight ? ControlsWithFlashlight : ControlsWithoutFlashlight;
                 GUI.Label(new Rect(Screen.width * 0.24f, Screen.height - 36f * scale,

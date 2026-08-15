@@ -22,6 +22,8 @@ namespace NinetyNine
             new Dictionary<EvacuationAction, Renderer>();
         private readonly Dictionary<EvacuationAction, Material> _controlAtlasMaterials =
             new Dictionary<EvacuationAction, Material>();
+        private readonly Dictionary<EvacuationAction, int> _controlVisualStates =
+            new Dictionary<EvacuationAction, int>();
         private NinetyNineEvacuationGame _game;
         private EvacuationAudio _audio;
         private Transform _root;
@@ -63,6 +65,13 @@ namespace NinetyNine
         private Material _mimicClothes;
         private Font _worldFont;
         private float _doorSeal;
+        private int _lastDisplayedFloor = -1;
+        private int _lastCabinEnergyBucket = -1;
+        private int _lastFlashlightChargeBucket = -1;
+        private bool _lastCabinFlickerOff;
+        private bool _lastCabinLowPower;
+        private bool _lastCabinCriticalPower;
+        private bool _lastFlashlightEnabled;
         private EvacuationMonster _monster;
         private EvacuationPrimitivePool _primitivePool;
         private EvacuationNavigationGraph _navigationGraph;
@@ -122,6 +131,8 @@ namespace NinetyNine
             bool blackout = plan.Blackout;
             bool distorted = plan.Distorted;
             int length = plan.Length;
+            bool spawnMonster = plan.SpawnMonster;
+            bool spawnNpc = plan.SpawnNpc && !spawnMonster;
 
             _floorRoot = new GameObject("Floor_" + floorNumber + "_" + theme + "_" +
                 plan.Layout).transform;
@@ -163,13 +174,13 @@ namespace NinetyNine
                 }
             }
             int monsterBypassIndex = -1;
-            if (plan.SpawnMonster)
+            if (spawnMonster)
             {
                 monsterBypassIndex = AddMonsterBypass(mainPath, cells, random);
             }
             _navigationGraph = new EvacuationNavigationGraph(cells);
 
-            Vector2Int? lockerCell = plan.SpawnMonster && explorationRooms.Count > 0
+            Vector2Int? lockerCell = spawnMonster && explorationRooms.Count > 0
                 ? explorationRooms[0]
                 : (Vector2Int?)null;
 
@@ -187,20 +198,17 @@ namespace NinetyNine
 
             if (isStartingFloor)
             {
-                EvacuationItemKind starterItem = random.NextDouble() < 0.5
-                    ? EvacuationItemKind.FlashBattery
-                    : EvacuationItemKind.Stimulant;
                 Vector3 starterPosition = CellPosition(mainPath[Mathf.Min(1, mainPath.Count - 1)]);
-                CreatePickup(starterItem, starterPosition + new Vector3(0f, 0.34f, 0.25f));
-                CreateNpc(CellPosition(mainPath[2]), false, floorNumber - random.Next(5, 10));
+                CreatePickup(EvacuationItemKind.PowerCell,
+                    starterPosition + new Vector3(0f, 0.42f, 0.25f));
                 CreateLight("StartFloorGuide", starterPosition + new Vector3(0f, 2.45f, 0f),
-                    new Color(0.95f, 0.66f, 0.38f), 3.4f, 8f, _floorRoot).shadows = LightShadows.Soft;
+                    new Color(0.95f, 0.66f, 0.38f), 3.4f, 8f, _floorRoot).shadows = LightShadows.None;
             }
             else if (!isExitFloor)
             {
                 bool criticalPower = _game.Power < 5f;
                 bool lowPower = _game.Power < 11f;
-                Vector2Int primaryCell = plan.SpawnMonster
+                Vector2Int primaryCell = spawnMonster
                     ? mainPath[Mathf.Max(2, mainPath.Count - 3)]
                     : mainPath[mainPath.Count - 1];
                 if (lowPower)
@@ -234,7 +242,7 @@ namespace NinetyNine
                         new Vector3(-0.62f, 0.34f, 0.25f));
                 }
 
-                if (plan.SpawnNpc)
+                if (spawnNpc)
                 {
                     Vector2Int npcCell = mainPath[Mathf.Max(2, mainPath.Count / 2)];
                     bool mimic = random.NextDouble() < 0.32;
@@ -256,7 +264,7 @@ namespace NinetyNine
                         CellPosition(fuseCell) + new Vector3(0.68f, 0.3f, -0.38f));
                 }
 
-                if (plan.SpawnMonster)
+                if (spawnMonster)
                 {
                     Vector2Int monsterCell = mainPath[mainPath.Count - 1];
                     CreateMonster(CellPosition(monsterCell) + new Vector3(0f, 0f, 0.6f),
@@ -340,8 +348,14 @@ namespace NinetyNine
                 return;
             }
             bool flicker = charge < 12f && Mathf.PerlinNoise(Time.time * 12f, charge) < 0.32f;
-            _flashlight.enabled = enabled && !flicker;
-            _flashlight.intensity = Mathf.Lerp(2.7f, 5.2f, Mathf.Clamp01(charge / 35f));
+            bool shouldEnable = enabled && !flicker;
+            int chargeBucket = Mathf.RoundToInt(charge);
+            if (_lastFlashlightEnabled == shouldEnable &&
+                _lastFlashlightChargeBucket == chargeBucket) return;
+            _lastFlashlightEnabled = shouldEnable;
+            _lastFlashlightChargeBucket = chargeBucket;
+            _flashlight.enabled = shouldEnable;
+            _flashlight.intensity = Mathf.Lerp(2.7f, 5.2f, Mathf.Clamp01(chargeBucket / 35f));
         }
 
         public void SetCabinLighting(float power01, bool lowPower, bool criticalPower, bool threatFlicker)
@@ -351,6 +365,13 @@ namespace NinetyNine
             bool flickerOff = threatFlicker
                 ? flickerNoise < 0.48f
                 : criticalPower ? flickerNoise < 0.34f : lowPower && flickerNoise < 0.1f;
+            int energyBucket = Mathf.RoundToInt(energy * 100f);
+            if (_lastCabinEnergyBucket == energyBucket && _lastCabinFlickerOff == flickerOff &&
+                _lastCabinLowPower == lowPower && _lastCabinCriticalPower == criticalPower) return;
+            _lastCabinEnergyBucket = energyBucket;
+            _lastCabinFlickerOff = flickerOff;
+            _lastCabinLowPower = lowPower;
+            _lastCabinCriticalPower = criticalPower;
             float intensity = Mathf.Lerp(1.4f, 6.2f, Mathf.SmoothStep(0f, 1f, energy));
             if (lowPower) intensity *= criticalPower ? 0.7f : 0.82f;
             if (flickerOff) intensity *= 0.18f;
@@ -376,7 +397,10 @@ namespace NinetyNine
 
         public void SetFloorDisplay(int floor)
         {
-            if (_floorDisplay != null) _floorDisplay.text = Mathf.Clamp(floor, 1, 99).ToString("00");
+            int displayedFloor = Mathf.Clamp(floor, 1, 99);
+            if (_floorDisplay == null || _lastDisplayedFloor == displayedFloor) return;
+            _lastDisplayedFloor = displayedFloor;
+            _floorDisplay.text = displayedFloor.ToString("00");
         }
 
         public void SetControlState(EvacuationAction action, bool active, bool danger)
@@ -386,6 +410,11 @@ namespace NinetyNine
             {
                 return;
             }
+            int visualState = danger ? 2 : active ? 1 : 0;
+            int previousState;
+            if (_controlVisualStates.TryGetValue(action, out previousState) &&
+                previousState == visualState) return;
+            _controlVisualStates[action] = visualState;
             Color activeColor = action == EvacuationAction.Stop
                 ? new Color(1f, 0.06f, 0.025f)
                 : action == EvacuationAction.Door || action == EvacuationAction.FusePanel
@@ -525,7 +554,7 @@ namespace NinetyNine
                 new Vector3(2.42f, 0.025f, 0.54f), _cabinLampGlow, _cabin, false);
             Light light = CreateLight(name + "Light", new Vector3(0f, 2.72f, z),
                 new Color(1f, 0.78f, 0.52f), 4.8f, 5.2f, _cabin);
-            light.shadows = _cabinLights.Count == 0 ? LightShadows.Soft : LightShadows.None;
+            light.shadows = _cabinLights.Count == 0 ? LightShadows.Hard : LightShadows.None;
             _cabinLights.Add(light);
         }
 
@@ -617,7 +646,7 @@ namespace NinetyNine
             _flashlight.type = LightType.Spot;
             _flashlight.spotAngle = 43f;
             _flashlight.innerSpotAngle = 24f;
-            _flashlight.shadows = LightShadows.Soft;
+            _flashlight.shadows = LightShadows.Hard;
             _flashlight.enabled = false;
         }
 
@@ -642,12 +671,12 @@ namespace NinetyNine
                 Box("Fixture", center + new Vector3(0f, ceilingHeight - 0.1f, 0f),
                     new Vector3(0.65f, 0.05f, 0.2f), theme == EvacuationTheme.RedHall ? _redGlow : _cyanGlow,
                     _floorRoot, false);
-                if (_floorLights.Count < 12 && random.NextDouble() < 0.48)
+                if (_floorLights.Count < 8 && random.NextDouble() < 0.48)
                 {
                     Light light = CreateLight("FloorLight", center +
                         new Vector3(0f, ceilingHeight - 0.38f, 0f), lightColor,
                         theme == EvacuationTheme.RedHall ? 2.8f : 2.2f, 5.5f, _floorRoot);
-                    light.shadows = _floorLights.Count < 3 ? LightShadows.Soft : LightShadows.None;
+                    light.shadows = LightShadows.None;
                     _floorLights.Add(light);
                 }
             }

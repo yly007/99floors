@@ -13,6 +13,9 @@ namespace NinetyNine
         private readonly Dictionary<PrimitiveType, Stack<GameObject>> _available =
             new Dictionary<PrimitiveType, Stack<GameObject>>();
         private readonly Stack<Light> _availableLights = new Stack<Light>();
+        private readonly List<Light> _lightBuffer = new List<Light>();
+        private readonly List<EvacuationPooledPrimitive> _primitiveBuffer =
+            new List<EvacuationPooledPrimitive>();
         private readonly Transform _poolRoot;
 
         public int TotalCreated { get; private set; }
@@ -91,21 +94,22 @@ namespace NinetyNine
         public void ReleaseHierarchy(Transform hierarchy)
         {
             if (hierarchy == null) return;
-            Light[] lights = hierarchy.GetComponentsInChildren<Light>(true);
-            for (int i = 0; i < lights.Length; i++)
+            _lightBuffer.Clear();
+            hierarchy.GetComponentsInChildren(true, _lightBuffer);
+            for (int i = 0; i < _lightBuffer.Count; i++)
             {
-                Light light = lights[i];
+                Light light = _lightBuffer[i];
                 if (light == null) continue;
                 light.enabled = false;
                 light.gameObject.SetActive(false);
                 light.transform.SetParent(_poolRoot, false);
                 _availableLights.Push(light);
             }
-            EvacuationPooledPrimitive[] primitives =
-                hierarchy.GetComponentsInChildren<EvacuationPooledPrimitive>(true);
-            for (int i = 0; i < primitives.Length; i++)
+            _primitiveBuffer.Clear();
+            hierarchy.GetComponentsInChildren(true, _primitiveBuffer);
+            for (int i = 0; i < _primitiveBuffer.Count; i++)
             {
-                EvacuationPooledPrimitive marker = primitives[i];
+                EvacuationPooledPrimitive marker = _primitiveBuffer[i];
                 if (marker == null) continue;
                 GameObject value = marker.gameObject;
                 Collider collider = value.GetComponent<Collider>();
@@ -123,6 +127,8 @@ namespace NinetyNine
                 stack.Push(value);
                 AvailableCount++;
             }
+            _lightBuffer.Clear();
+            _primitiveBuffer.Clear();
         }
     }
 }

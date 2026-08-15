@@ -204,6 +204,8 @@ namespace NinetyNineEditor
                     valid &= plan.FloorNumber == floor &&
                         (floor == 99 ? plan.Length == 4 : floor == 1 ? plan.Length >= 8 : plan.Length >= 11);
                     valid &= !(floor == 99 && plan.SpawnMonster);
+                    valid &= !(floor == 99 && plan.SpawnNpc);
+                    valid &= !(plan.SpawnMonster && plan.SpawnNpc);
                     valid &= !(previous == FloorPressure.Chase && plan.Pressure == FloorPressure.Chase);
                     List<Vector2Int> generatedPath = new List<Vector2Int>();
                     HashSet<Vector2Int> generatedCells = new HashSet<Vector2Int>();

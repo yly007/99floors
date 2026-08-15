@@ -39,7 +39,7 @@ namespace NinetyNine
                     floorEvent == FloorEventKind.MirroredCorridor || floorEvent == FloorEventKind.ShiftingRooms),
                 SpawnMonster = !start && !exit && (pressure == FloorPressure.Threat ||
                     pressure == FloorPressure.Chase || random.NextDouble() < Mathf.Lerp(0.1f, 0.42f, depth)),
-                SpawnNpc = start || (!exit && random.NextDouble() < 0.34),
+                SpawnNpc = !start && !exit && random.NextDouble() < 0.34,
                 SpawnEvidence = !start && (visited % 3 == 2 || random.NextDouble() < 0.24),
                 IsStartingFloor = start,
                 IsExitFloor = exit
@@ -47,7 +47,7 @@ namespace NinetyNine
             if (floorEvent == FloorEventKind.ChasedSurvivor)
             {
                 result.SpawnNpc = true;
-                result.SpawnMonster = true;
+                result.SpawnMonster = false;
             }
             else if (floorEvent == FloorEventKind.SurvivorCamp ||
                 floorEvent == FloorEventKind.PassengerMismatch)
@@ -58,6 +58,10 @@ namespace NinetyNine
                 floorEvent == FloorEventKind.LockdownPickup)
             {
                 result.SpawnMonster = true;
+            }
+            if (result.SpawnMonster)
+            {
+                result.SpawnNpc = false;
             }
             Remember(theme, pressure);
             return result;

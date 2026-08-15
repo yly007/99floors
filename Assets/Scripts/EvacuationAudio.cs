@@ -223,6 +223,12 @@ namespace NinetyNine
             _oneShot.PlayOneShot(_buttonClip, 0.62f);
         }
 
+        public void PlayPowerTick(bool gained)
+        {
+            _oneShot.pitch = 1f;
+            _oneShot.PlayOneShot(gained ? _pickupClip : _buttonClip, gained ? 0.14f : 0.1f);
+        }
+
         public void PlayNarrativeCue()
         {
             _oneShot.pitch = 1f;
