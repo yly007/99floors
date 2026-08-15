@@ -33,6 +33,7 @@ namespace NinetyNine
         private readonly Queue<SubtitleLine> _subtitleQueue = new Queue<SubtitleLine>();
         private Texture2D _storyAtlas;
         private Texture2D _titleHero;
+        private Texture2D _titleWordmark;
         private Texture2D _panelSkin;
         private Texture2D _buttonSkin;
         private Font _font;
@@ -61,11 +62,13 @@ namespace NinetyNine
 
         public bool PrologueActive => _prologueActive;
 
-        public void Initialize(Texture2D storyAtlas, Texture2D titleHero, Texture2D panelSkin, Texture2D buttonSkin,
-            Font font, Action beginAction, Action settingsAction, Action quitAction)
+        public void Initialize(Texture2D storyAtlas, Texture2D titleHero, Texture2D titleWordmark,
+            Texture2D panelSkin, Texture2D buttonSkin, Font font, Action beginAction, Action settingsAction,
+            Action quitAction)
         {
             _storyAtlas = storyAtlas;
             _titleHero = titleHero;
+            _titleWordmark = titleWordmark;
             _panelSkin = panelSkin;
             _buttonSkin = buttonSkin;
             _font = font;
@@ -283,13 +286,20 @@ namespace NinetyNine
             DrawTint(new Rect(left - 14f * scale, Screen.height * 0.23f,
                 3f * scale, Screen.height * 0.48f), new Color(0.69f, 0.12f, 0.09f, 0.88f));
 
-            GUI.Label(new Rect(left, Screen.height * 0.245f,
-                contentWidth, 34f * scale), "午夜封锁记录  //  顶层终端 99", _eyebrowStyle);
-            GUI.Label(new Rect(left - 2f * scale, Screen.height * 0.3f,
-                contentWidth + 40f * scale, 112f * scale), "逃离午夜大楼", _titleStyle);
+            if (_titleWordmark != null)
+            {
+                GUI.DrawTextureWithTexCoords(new Rect(left - 4f * scale, Screen.height * 0.3f,
+                    contentWidth + 46f * scale, 116f * scale), _titleWordmark,
+                    new Rect(0f, 0.18f, 1f, 0.64f), true);
+            }
+            else
+            {
+                GUI.Label(new Rect(left - 2f * scale, Screen.height * 0.3f,
+                    contentWidth + 40f * scale, 112f * scale), "逃离午夜大楼", _titleStyle);
+            }
             GUI.Label(new Rect(left, Screen.height * 0.438f,
                 contentWidth, 76f * scale),
-                "你被困在 99 层。唯一还在运行的电梯，正等着把你带往不该抵达的楼层。", _taglineStyle);
+                "你已经加班太久，久到这栋大楼忘了让你离开。", _taglineStyle);
             GUI.Label(new Rect(left, Screen.height * 0.525f,
                 contentWidth, 26f * scale), "不要相信它停在一楼。", _titleWarningStyle);
 
@@ -302,9 +312,6 @@ namespace NinetyNine
             if (GUI.Button(new Rect(left, Screen.height * 0.77f,
                 330f * scale, 54f * scale), "离开大楼", _buttonStyle))
                 _quitAction?.Invoke();
-            GUI.Label(new Rect(left, Screen.height * 0.865f,
-                contentWidth + 60f * scale, 30f * scale), "ENTER 进入电梯  ·  ESC 跳过序章", _hintStyle);
-
             float flicker = Mathf.Clamp01((Mathf.Sin(Time.unscaledTime * 1.7f) - 0.955f) / 0.045f);
             if (flicker > 0f)
             {

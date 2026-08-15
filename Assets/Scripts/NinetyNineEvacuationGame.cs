@@ -166,6 +166,7 @@ namespace NinetyNine
             _narrative = gameObject.AddComponent<EvacuationNarrativeUI>();
             _narrative.Initialize(Resources.Load<Texture2D>("Art/opening_story_atlas_v1"),
                 Resources.Load<Texture2D>("Art/title_midnight_tower_hero_v2"),
+                Resources.Load<Texture2D>("Art/title_midnight_tower_wordmark_v1"),
                 _uiPanelSkin, _uiButtonSkin, _font, StartPrologue, OpenTitleSettings, ExitFromTitle);
             BuildResolutionList();
             LoadPlayerSettings();
