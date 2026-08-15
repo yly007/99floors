@@ -53,8 +53,6 @@ namespace NinetyNine
         private Material _surveillanceSign;
         private readonly Dictionary<EvacuationItemKind, Material> _itemAtlasMaterials =
             new Dictionary<EvacuationItemKind, Material>();
-        private readonly Dictionary<int, Material> _characterFaceMaterials =
-            new Dictionary<int, Material>();
         private Material _floor;
         private Material _redGlow;
         private Material _cyanGlow;
@@ -1087,9 +1085,6 @@ namespace NinetyNine
                 root.transform, false, new Vector3(0f, 0f, 2f));
             Sphere("Head", new Vector3(0f, 2.25f * bodyScale, 0f),
                 new Vector3(0.38f, 0.48f, 0.34f), _black, root.transform, false);
-            Decal("Face", new Vector3(0f, 2.25f * bodyScale, -0.345f),
-                new Vector2(0.62f, 0.72f), GetCharacterFaceMaterial((int)archetype),
-                root.transform);
             Cylinder("LeftArm", new Vector3(-0.5f, 1.15f, 0f), new Vector3(0.075f, 0.92f, 0.075f), _black, root.transform, false,
                 new Vector3(0f, 0f, -9f));
             Cylinder("RightArm", new Vector3(0.5f, 1.15f, 0f), new Vector3(0.075f, 0.92f, 0.075f), _black, root.transform, false,
@@ -1144,9 +1139,6 @@ namespace NinetyNine
                 new Vector3(0.1f, 0.52f, 0.1f), clothes, root.transform, false);
             Sphere("Head", new Vector3(0f, 1.82f, 0f), new Vector3(0.34f, 0.4f, 0.32f),
                 mimic ? _black : _brass, root.transform, false);
-            int faceIndex = mimic ? 1 : 4 + Mathf.Abs(destination % 4);
-            Decal("Face", new Vector3(0f, 1.82f, -0.325f), new Vector2(0.52f, 0.62f),
-                GetCharacterFaceMaterial(faceIndex), root.transform);
             Cylinder("LeftArm", new Vector3(-0.43f, 0.92f, 0f),
                 new Vector3(0.055f, 0.58f, 0.055f), clothes, root.transform, false,
                 new Vector3(0f, 0f, -5f));
@@ -1431,27 +1423,6 @@ namespace NinetyNine
             material = MakeGeneratedAtlasMaterial(action + " Industrial Control",
                 "Art/elevator_control_atlas_v3", index, 2, 3);
             _controlAtlasMaterials[action] = material;
-            return material;
-        }
-
-        private Material GetCharacterFaceMaterial(int index)
-        {
-            index = Mathf.Clamp(index, 0, 7);
-            Material material;
-            if (_characterFaceMaterials.TryGetValue(index, out material)) return material;
-            Shader shader = Shader.Find("NinetyNine/CharacterFaceDecal") ?? Shader.Find("Unlit/Texture");
-            material = new Material(shader) { name = "Character Face " + index };
-            Texture2D texture = Resources.Load<Texture2D>("Art/character_face_atlas_v1");
-            if (texture != null)
-            {
-                texture.wrapMode = TextureWrapMode.Clamp;
-                material.mainTexture = texture;
-                material.mainTextureScale = new Vector2(0.25f, 0.5f);
-                int rowFromTop = index / 4;
-                material.mainTextureOffset = new Vector2((index % 4) * 0.25f,
-                    1f - (rowFromTop + 1) * 0.5f);
-            }
-            _characterFaceMaterials[index] = material;
             return material;
         }
 

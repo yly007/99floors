@@ -8,6 +8,7 @@ namespace NinetyNine
     public enum EvacuationPhase
     {
         Title,
+        Prologue,
         Stopped,
         ClosingDoors,
         Descending,
@@ -57,15 +58,14 @@ namespace NinetyNine
         private EvacuationFloorGenerator _world;
         private FirstPersonController _player;
         private EvacuationAudio _audio;
+        private EvacuationNarrativeUI _narrative;
         private EvacuationFloorDirector _floorDirector;
         private EvacuationStorySystem _story;
         private EvacuationFloorPlan _currentPlan;
         private EvacuationNpc _dialogueNpc;
         private EvacuationInteractable _focus;
-        private Texture2D _titleBackground;
         private Texture2D _panelTexture;
         private Font _font;
-        private GUIStyle _titleStyle;
         private GUIStyle _headingStyle;
         private GUIStyle _bodyStyle;
         private GUIStyle _smallStyle;
@@ -81,13 +81,14 @@ namespace NinetyNine
         private float _descentSpeed;
         private float _brakeTimer;
         private float _doorSeal;
-        private float _messageUntil;
         private float _slowUntil;
         private float _stimulantUntil;
         private float _flashCharge;
         private float _stoppedAutomationTime;
         private float _carriedCellCharge;
         private float _storedCellCharge;
+        private float _objectiveRevealUntil;
+        private float _controlsHintUntil;
         private float _masterVolume = 1f;
         private float _brightness = 1f;
         private int _currentFloor;
@@ -113,10 +114,12 @@ namespace NinetyNine
         private bool _fullscreen;
         private bool _phoneAnsweredThisFloor;
         private bool _parasiteActive;
+        private bool _notebookOpen;
+        private bool _lowPowerThoughtShown;
+        private bool _monsterThoughtShown;
         private System.Random _gameplayRandom;
         private int _resolutionIndex = 2;
         private int _qualityIndex = 3;
-        private string _message = string.Empty;
         private string _dialogueText = string.Empty;
         private string _endingTitle = string.Empty;
         private string _endingBody = string.Empty;
@@ -141,7 +144,6 @@ namespace NinetyNine
             Application.targetFrameRate = 60;
             QualitySettings.vSyncCount = 1;
             RunSeed = unchecked(Environment.TickCount * 397) ^ DateTime.Now.Millisecond;
-            _titleBackground = Resources.Load<Texture2D>("Art/title_hall");
             _panelTexture = MakeTexture(new Color(0.004f, 0.009f, 0.01f, 0.94f));
             _font = CreateGameFont();
             _floorDirector = new EvacuationFloorDirector();
@@ -150,11 +152,15 @@ namespace NinetyNine
             _world = gameObject.AddComponent<EvacuationFloorGenerator>();
             _world.Initialize(this, _audio);
             _player = _world.Player;
+            _narrative = gameObject.AddComponent<EvacuationNarrativeUI>();
+            _narrative.Initialize(Resources.Load<Texture2D>("Art/opening_story_atlas_v1"), _font,
+                StartPrologue, OpenTitleSettings, ExitFromTitle);
             BuildResolutionList();
             LoadPlayerSettings();
             ShowTitle();
 #if !UNITY_EDITOR
             _showLauncherSettings = PlayerPrefs.GetInt("Evacuation.LauncherConfigured", 0) == 0;
+            _narrative.ShowTitle(!_showLauncherSettings);
 #endif
 
 #if UNITY_EDITOR
@@ -163,15 +169,57 @@ namespace NinetyNine
             bool fullRun = Array.Exists(args, value => value == "-evacuationFullRun");
             bool failureRun = Array.Exists(args, value => value == "-evacuationFailureRun");
             bool monsterRun = Array.Exists(args, value => value == "-evacuationMonsterRun");
-            if (capture || fullRun || failureRun || monsterRun)
+            bool narrativeRun = Array.Exists(args, value => value == "-evacuationNarrativeRun");
+            if (capture || fullRun || failureRun || monsterRun || narrativeRun)
             {
                 Application.runInBackground = true;
-                StartCoroutine(CapturePrototype(fullRun, failureRun, monsterRun));
+                if (narrativeRun) StartCoroutine(CaptureNarrativePrototype());
+                else StartCoroutine(CapturePrototype(fullRun, failureRun, monsterRun));
             }
 #endif
         }
 
 #if UNITY_EDITOR
+        private IEnumerator CaptureNarrativePrototype()
+        {
+            yield return new WaitForSecondsRealtime(1.1f);
+            string projectRoot = System.IO.Directory.GetParent(Application.dataPath).FullName;
+            string captureRoot = System.IO.Path.Combine(projectRoot, "Logs", "Captures");
+            System.IO.Directory.CreateDirectory(captureRoot);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot, "NarrativeTitle.png"));
+            yield return new WaitForEndOfFrame();
+            StartPrologue();
+            bool prologuePhasePassed = _phase == EvacuationPhase.Prologue &&
+                _narrative.PrologueActive;
+            yield return new WaitForSecondsRealtime(0.9f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot,
+                "NarrativePrologueOffice.png"));
+            yield return new WaitForSecondsRealtime(3.1f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot,
+                "NarrativePrologueStairs.png"));
+            yield return new WaitForSecondsRealtime(4.2f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot,
+                "NarrativePrologueLobby.png"));
+            yield return new WaitForSecondsRealtime(4.5f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot,
+                "NarrativePrologueElevator.png"));
+            yield return new WaitForSecondsRealtime(5f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot,
+                "NarrativeGameplayThought.png"));
+            yield return new WaitForSecondsRealtime(0.5f);
+            bool enteredRunPassed = _phase == EvacuationPhase.Stopped && !_narrative.PrologueActive &&
+                _remainingTime > RunDuration - 3f;
+            Transform[] allTransforms = FindObjectsOfType<Transform>();
+            bool noFaceSticker = !Array.Exists(allTransforms, value => value != null &&
+                value.name == "Face");
+            Debug.Log("EVACUATION_NARRATIVE_PROLOGUE_TEST=" +
+                (prologuePhasePassed && enteredRunPassed ? "PASS" : "FAIL"));
+            Debug.Log("EVACUATION_FACE_STICKER_REMOVAL_TEST=" +
+                (noFaceSticker ? "PASS" : "FAIL"));
+            UnityEditor.EditorApplication.Exit(0);
+        }
+
         private IEnumerator CapturePrototype(bool fullRun, bool failureRun, bool monsterRun)
         {
             yield return new WaitForSeconds(1.1f);
@@ -183,13 +231,13 @@ namespace NinetyNine
             BeginRun();
             yield return new WaitForSeconds(3f);
             _player.ResetInsideCabin();
-            _messageUntil = 0f;
+            _narrative.ClearGameplayNarrative();
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot, "EvacuationDisplay.png"));
             _player.CanMove = false;
             _player.transform.rotation = Quaternion.Euler(0f, 56f, 0f);
             _player.ViewCamera.transform.localRotation = Quaternion.Euler(4f, 0f, 0f);
-            _messageUntil = 0f;
+            _narrative.ClearGameplayNarrative();
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot, "EvacuationCabin.png"));
             float capturePower = _power;
@@ -539,7 +587,7 @@ namespace NinetyNine
                     _world.PositionMonsterForCapture(new Vector3(0f, 0f, 5.4f));
                     _world.Monster.TriggerChase();
                     _world.SetFlashlight(true, 100f);
-                    _messageUntil = 0f;
+                    _narrative.ClearGameplayNarrative();
                     yield return new WaitForEndOfFrame();
                     ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot, "EvacuationThreat.png"));
                     _world.SetFlashlight(false, 100f);
@@ -572,6 +620,7 @@ namespace NinetyNine
                 Input.GetKeyDown(KeyCode.Escape))
             {
                 _showLauncherSettings = false;
+                _narrative.ShowTitle(true);
                 return;
             }
             if (_dialogueNpc != null && Input.GetKeyDown(KeyCode.Escape))
@@ -593,8 +642,12 @@ namespace NinetyNine
                 if (!_showLauncherSettings &&
                     (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space)))
                 {
-                    BeginRun();
+                    StartPrologue();
                 }
+                return;
+            }
+            if (_phase == EvacuationPhase.Prologue)
+            {
                 return;
             }
             if (_phase == EvacuationPhase.Won || _phase == EvacuationPhase.Lost)
@@ -608,6 +661,12 @@ namespace NinetyNine
                     BeginRun();
                 }
                 return;
+            }
+
+            if (Input.GetKeyDown(KeyCode.Tab))
+            {
+                _notebookOpen = !_notebookOpen;
+                _objectiveRevealUntil = _notebookOpen ? float.PositiveInfinity : 0f;
             }
 
             _remainingTime = Mathf.Max(0f, _remainingTime - Time.deltaTime);
@@ -669,6 +728,32 @@ namespace NinetyNine
             _player.ResetInsideCabin();
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
+            if (_narrative != null) _narrative.ShowTitle(true);
+        }
+
+        private void StartPrologue()
+        {
+            if (_phase != EvacuationPhase.Title || _showLauncherSettings) return;
+            _phase = EvacuationPhase.Prologue;
+            _player.CanMove = false;
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = false;
+            _audio.PlayNarrativeCue();
+            _narrative.PlayPrologue(() => BeginRun());
+        }
+
+        private void OpenTitleSettings()
+        {
+            if (_phase != EvacuationPhase.Title) return;
+            _audio.PlayButton();
+            _showLauncherSettings = true;
+            _narrative.ShowTitle(false);
+        }
+
+        private void ExitFromTitle()
+        {
+            SavePlayerSettings();
+            Application.Quit();
         }
 
         private void LoadPlayerSettings()
@@ -817,6 +902,9 @@ namespace NinetyNine
             _stoppedAutomationTime = 0f;
             _phoneAnsweredThisFloor = false;
             _parasiteActive = false;
+            _notebookOpen = false;
+            _lowPowerThoughtShown = false;
+            _monsterThoughtShown = false;
             _automationVisitedFloor = false;
             _story.Reset();
             EvacuationSignals.Clear();
@@ -830,7 +918,12 @@ namespace NinetyNine
             _audio.SetTravelling(false);
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
-            ShowTransientMessage("从 99 层撤离。电量只能支撑一小段下降。", 4f);
+            _objectiveRevealUntil = Time.unscaledTime + 8f;
+            _controlsHintUntil = Time.unscaledTime + 12f;
+            _narrative.ClearGameplayNarrative();
+            _narrative.QueueThought("……又是 99 层。楼梯根本出不去。", 2.8f);
+            _narrative.QueueThought("电量只有 19 格，绝对撑不到一楼。", 3f);
+            _narrative.QueueThought("外面的楼层也许有应急电池。我得先找一块。", 3.4f);
         }
 
         private void UpdateStopped()
@@ -1366,7 +1459,15 @@ namespace NinetyNine
             _health = Mathf.Max(0f, _health - 20f);
             _slowUntil = Time.time + 3f;
             _audio.PlayHit();
-            ShowTransientMessage("攻击让你的视野失焦。它停顿了一瞬——快跑！", 2.2f);
+            if (!_monsterThoughtShown)
+            {
+                _monsterThoughtShown = true;
+                _narrative.ShowThought("那不是人。它停顿了一瞬——跑！回电梯！", 2.5f);
+            }
+            else
+            {
+                ShowTransientMessage("视野又在失焦。趁它停顿，快跑！", 2.2f);
+            }
             if (_health <= 0f)
             {
                 Lose("被 追 上", "最后一次攻击后，你再也没能站起来。电梯门一直开着。");
@@ -1670,6 +1771,11 @@ namespace NinetyNine
 
         private void UpdateWorldState()
         {
+            if (!_lowPowerThoughtShown && _power > 0f && _power <= LowPowerWarning)
+            {
+                _lowPowerThoughtShown = true;
+                _narrative.ShowThought("灯开始闪了。下一层必须停，我需要电池。", 3f);
+            }
             int displayFloor = _currentPlan != null && _currentPlan.Event == FloorEventKind.WrongFloorNumber
                 ? Mathf.Clamp(_currentFloor + 7, 1, 99) : _currentFloor;
             _world.SetFloorDisplay(displayFloor);
@@ -1782,8 +1888,7 @@ namespace NinetyNine
 
         public void ShowTransientMessage(string value, float duration)
         {
-            _message = value;
-            _messageUntil = Time.time + duration;
+            if (_narrative != null) _narrative.ShowThought(value, duration);
         }
 
         private void OnGUI()
@@ -1793,13 +1898,13 @@ namespace NinetyNine
             ApplyStyleScale(scale);
             if (_phase == EvacuationPhase.Title)
             {
-                DrawTitle(scale);
                 if (_showLauncherSettings)
                 {
                     DrawSettingsPanel(scale, false);
                 }
                 return;
             }
+            if (_phase == EvacuationPhase.Prologue) return;
 
             DrawStatus(scale);
             DrawObjective(scale);
@@ -1818,45 +1923,9 @@ namespace NinetyNine
             {
                 DrawInteraction(scale);
             }
-            if (!string.IsNullOrEmpty(_message) && Time.time < _messageUntil)
-            {
-                Rect messageRect = new Rect(Screen.width * 0.2f, Screen.height * 0.76f,
-                    Screen.width * 0.6f, 58f * scale);
-                DrawPanel(messageRect, new Color(0.08f, 0.82f, 0.72f));
-                GUI.Label(messageRect, _message, _centerStyle);
-            }
             if (_phase == EvacuationPhase.Won || _phase == EvacuationPhase.Lost)
             {
                 DrawEnding(scale);
-            }
-        }
-
-        private void DrawTitle(float scale)
-        {
-            if (_titleBackground != null)
-            {
-                GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), _titleBackground,
-                    ScaleMode.ScaleAndCrop);
-            }
-            DrawTint(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0f, 0.006f, 0.008f, 0.58f));
-            DrawTint(new Rect(0f, Screen.height * 0.57f, Screen.width, Screen.height * 0.43f),
-                new Color(0f, 0f, 0f, 0.79f));
-            GUI.Label(new Rect(Screen.width * 0.065f, Screen.height * 0.08f,
-                Screen.width * 0.82f, 110f * scale), "99 层撤离", _titleStyle);
-            GUI.Label(new Rect(Screen.width * 0.07f, Screen.height * 0.08f + 94f * scale,
-                Screen.width * 0.72f, 40f * scale), "最后一部电梯", _headingStyle);
-            GUI.Label(new Rect(Screen.width * 0.065f, Screen.height * 0.61f,
-                Screen.width * 0.76f, 86f * scale),
-                "电量无法直达一楼。下降、抢停、进入未知楼层寻找电池；遇到怪物只能逃回电梯，在它越过门缝前关门。大多数撤离都会失败。", _bodyStyle);
-            GUI.Label(new Rect(Screen.width * 0.065f, Screen.height * 0.76f,
-                Screen.width * 0.8f, 36f * scale),
-                "WASD 移动 · SHIFT 冲刺 · C/CTRL 切换蹲伏 · E 交互 · F 手电筒 · 鼠标无限观察", _smallStyle);
-            GUI.Label(new Rect(Screen.width * 0.065f, Screen.height * 0.84f,
-                Screen.width * 0.45f, 42f * scale), "按 ENTER 开始撤离", _bodyStyle);
-            if (GUI.Button(new Rect(Screen.width - 300f * scale, Screen.height - 86f * scale,
-                250f * scale, 46f * scale), "启动显示与操作设置"))
-            {
-                _showLauncherSettings = true;
             }
         }
 
@@ -1931,13 +2000,16 @@ namespace NinetyNine
             {
                 if (_passengers[i] != null) passengerCount++;
             }
+            if (!_notebookOpen && passengerCount == 0 &&
+                Time.unscaledTime >= _objectiveRevealUntil) return;
             float width = 340f * scale;
             float height = (124f + passengerCount * 24f) * scale;
             float objectiveTop = Screen.width < 1100 ? 126f * scale : 18f * scale;
             Rect rect = new Rect(20f * scale, objectiveTop, width, height);
             DrawPanel(rect, new Color(1f, 0.52f, 0.12f));
             GUI.Label(new Rect(rect.x + 14f * scale, rect.y + 5f * scale,
-                rect.width - 28f * scale, 23f * scale), "撤离任务", _smallStyle);
+                rect.width - 28f * scale, 23f * scale),
+                _notebookOpen ? "随身记录  [TAB 收起]" : "撤离目标  [TAB 查看]", _smallStyle);
             GUI.Label(new Rect(rect.x + 14f * scale, rect.y + 28f * scale,
                 rect.width - 28f * scale, 72f * scale), CurrentObjective(), _objectiveStyle);
 
@@ -2055,9 +2127,12 @@ namespace NinetyNine
                 GUI.Label(prompt, context, _centerStyle);
             }
 
-            string controls = _hasFlashlight ? ControlsWithFlashlight : ControlsWithoutFlashlight;
-            GUI.Label(new Rect(Screen.width * 0.24f, Screen.height - 36f * scale,
-                Screen.width * 0.52f, 28f * scale), controls, _centerStyle);
+            if (_notebookOpen || Time.unscaledTime < _controlsHintUntil)
+            {
+                string controls = _hasFlashlight ? ControlsWithFlashlight : ControlsWithoutFlashlight;
+                GUI.Label(new Rect(Screen.width * 0.24f, Screen.height - 36f * scale,
+                    Screen.width * 0.52f, 28f * scale), controls, _centerStyle);
+            }
         }
 
         private void DrawNpcDialogue(float scale)
@@ -2162,7 +2237,11 @@ namespace NinetyNine
             {
                 SavePlayerSettings();
                 if (paused) SetPaused(false);
-                else _showLauncherSettings = false;
+                else
+                {
+                    _showLauncherSettings = false;
+                    _narrative.ShowTitle(true);
+                }
             }
             y += 58f * scale;
             if (paused && GUI.Button(new Rect(labelX, y, 230f * scale, 40f * scale), "重开当前种子"))
@@ -2219,8 +2298,7 @@ namespace NinetyNine
 
         private void EnsureStyles()
         {
-            if (_titleStyle != null) return;
-            _titleStyle = NewStyle(FontStyle.Bold, TextAnchor.MiddleLeft, new Color(0.88f, 0.96f, 0.93f));
+            if (_headingStyle != null) return;
             _headingStyle = NewStyle(FontStyle.Normal, TextAnchor.MiddleLeft, new Color(0.1f, 0.92f, 0.78f));
             _bodyStyle = NewStyle(FontStyle.Normal, TextAnchor.MiddleLeft, new Color(0.82f, 0.88f, 0.86f));
             _bodyStyle.wordWrap = true;
@@ -2249,7 +2327,6 @@ namespace NinetyNine
 
         private void ApplyStyleScale(float scale)
         {
-            _titleStyle.fontSize = Mathf.RoundToInt(62f * scale);
             _headingStyle.fontSize = Mathf.RoundToInt(28f * scale);
             _bodyStyle.fontSize = Mathf.RoundToInt(21f * scale);
             _smallStyle.fontSize = Mathf.RoundToInt(15f * scale);

@@ -40,6 +40,7 @@ namespace NinetyNine
         private AudioClip _threatClip;
         private AudioClip _phoneClip;
         private AudioClip _distantKnockClip;
+        private AudioClip _narrativeCueClip;
         private AudioClip[] _stepVariants;
         private AudioClip[] _metalStepVariants;
         private AudioClip[] _wetStepVariants;
@@ -81,6 +82,7 @@ namespace NinetyNine
             _threatClip = CreateToneSweep("Threat Sting", 190f, 41f, 0.75f, 0.48f);
             _phoneClip = CreatePhoneRing();
             _distantKnockClip = CreateNoiseImpact("Distant Pipe Knock", 0.34f, 74f, 0.52f, 8127);
+            _narrativeCueClip = CreateToneSweep("Lockdown Intercom Cue", 420f, 92f, 0.65f, 0.2f);
             _stepVariants = new[]
             {
                 _stepClip,
@@ -219,6 +221,12 @@ namespace NinetyNine
         {
             _oneShot.pitch = 1f;
             _oneShot.PlayOneShot(_buttonClip, 0.62f);
+        }
+
+        public void PlayNarrativeCue()
+        {
+            _oneShot.pitch = 1f;
+            _oneShot.PlayOneShot(_narrativeCueClip, 0.72f);
         }
 
         public void PlayPickup()

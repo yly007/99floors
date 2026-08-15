@@ -73,8 +73,7 @@ namespace NinetyNineEditor
                 "Unlit/Texture",
                 "Particles/Standard Unlit",
                 "Hidden/NinetyNine/AnalogHorror",
-                "NinetyNine/AdditiveParticle",
-                "NinetyNine/CharacterFaceDecal"
+                "NinetyNine/AdditiveParticle"
             };
             foreach (string shaderName in requiredShaderNames)
             {
@@ -118,8 +117,8 @@ namespace NinetyNineEditor
             ConfigureTexture("Assets/Resources/Art/survival_item_atlas_v2.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/building_signage_atlas_v2.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/elevator_control_atlas_v3.png", false, 2048);
-            ConfigureTexture("Assets/Resources/Art/character_face_atlas_v1.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/horror_particle_atlas_v1.png", false, 2048);
+            ConfigureTexture("Assets/Resources/Art/opening_story_atlas_v1.png", false, 2048);
 
             bool sceneExists = AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath) != null;
             if (!sceneExists)
