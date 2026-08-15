@@ -131,6 +131,17 @@ namespace NinetyNine
             ShowImmediate("大楼广播", body, duration, new Color(0.9f, 0.12f, 0.08f));
         }
 
+        public void ShowSystemMessage(string body, float duration)
+        {
+            ShowImmediate("电梯系统", body, duration, new Color(0.1f, 0.82f, 0.72f));
+        }
+
+        public void ShowNpcMessage(string speaker, string body, float duration)
+        {
+            ShowImmediate(string.IsNullOrWhiteSpace(speaker) ? "乘客" : speaker, body, duration,
+                new Color(0.72f, 0.82f, 0.76f));
+        }
+
         public void ClearGameplayNarrative()
         {
             _subtitleQueue.Clear();

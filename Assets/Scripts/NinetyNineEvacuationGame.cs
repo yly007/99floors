@@ -101,6 +101,7 @@ namespace NinetyNine
         private int _automationTarget;
         private int _automationWorstStopError;
         private int _scrap;
+        private int _loopCount;
         private bool _braking;
         private bool _hasFlashlight;
         private bool _flashlightOn;
@@ -373,6 +374,20 @@ namespace NinetyNine
             mimicStory.Discover("test_c");
             bool mimicExitPassed = mimicStory.Resolve(true, 2, false) == ExitResolution.MimicTakeover;
             Debug.Log("EVACUATION_MIMIC_EXIT_TEST=" + (mimicExitPassed ? "PASS" : "FAIL"));
+            EvacuationStorySystem storyProgression = new EvacuationStorySystem();
+            storyProgression.Discover("evidence_a");
+            storyProgression.Discover("witness_b");
+            bool storyActTwoPassed = storyProgression.Act == StoryAct.Remembered &&
+                storyProgression.LatestClue != null &&
+                !string.IsNullOrEmpty(storyProgression.LatestClue.Excerpt);
+            storyProgression.Discover("phone_c");
+            storyProgression.Discover("WrongFloorNumber_d");
+            storyProgression.Discover("PassengerMismatch_e");
+            bool storyActThreePassed = storyProgression.Act == StoryAct.Witnessed &&
+                storyProgression.Records.Count == 5;
+            Debug.Log("EVACUATION_STORY_ACT_TWO_TEST=" + (storyActTwoPassed ? "PASS" : "FAIL"));
+            Debug.Log("EVACUATION_STORY_ACT_THREE_TEST=" + (storyActThreePassed ? "PASS" : "FAIL"));
+            Debug.Log("EVACUATION_FOOTSTEP_GATE_TEST=" + (_audio.VerifyFootstepGate() ? "PASS" : "FAIL"));
 
             bool safeStartPassed = _world.Monster == null &&
                 FindObjectsOfType<EvacuationNpc>().Length == 1;
@@ -898,6 +913,7 @@ namespace NinetyNine
             _automation = false;
             _captureThreat = false;
             _acceptedAdministrator = false;
+            _loopCount = 0;
             _dialogueNpc = null;
             _dialogueText = string.Empty;
             _focus = null;
@@ -944,17 +960,17 @@ namespace NinetyNine
         {
             if (_phase != EvacuationPhase.Stopped || !_player.IsInsideElevator)
             {
-                ShowTransientMessage("必须回到电梯内才能启动下降。", 1.5f);
+                ShowSystemMessage("启动失败：轿厢内未检测到乘员。", 1.5f);
                 return;
             }
             if (_doorSeal < 0.999f)
             {
-                ShowTransientMessage("必须先使用门控关闭电梯门。", 1.8f);
+                ShowSystemMessage("启动失败：请先关闭电梯门。", 1.8f);
                 return;
             }
             if (_power <= StartCost + 0.05f)
             {
-                ShowTransientMessage("电量不足以启动电机。停车本身不再消耗电力。", 2f);
+                ShowSystemMessage("电量不足，驱动电机无法启动。", 2f);
                 return;
             }
             _power -= StartCost;
@@ -969,7 +985,7 @@ namespace NinetyNine
             int safeFloors = Mathf.Clamp(Mathf.FloorToInt(Mathf.Max(0f, _power - 0.25f) /
                 TravelCostPerFloor), 1, 14);
             _automationTarget = Mathf.Max(1, _currentFloor - safeFloors);
-            ShowTransientMessage("电机启动。需要停车时使用另一侧制停按钮。", 1.7f);
+            ShowSystemMessage("驱动电机已启动。制停控制保持待命。", 1.7f);
         }
 
         private void UpdateClosingDoors()
@@ -982,19 +998,19 @@ namespace NinetyNine
             }
             _phase = EvacuationPhase.Stopped;
             _world.SetBarrier(true);
-            ShowTransientMessage("门已关闭。现在可以启动下降。", 1.4f);
+            ShowSystemMessage("电梯门已锁定。驱动控制可用。", 1.4f);
         }
 
         private void ToggleDoors()
         {
             if (_phase == EvacuationPhase.Descending)
             {
-                ShowTransientMessage("电梯仍在运行，必须先停车。", 1.4f);
+                ShowSystemMessage("门控锁定：电梯仍在运行。", 1.4f);
                 return;
             }
             if (_phase == EvacuationPhase.ClosingDoors || _phase == EvacuationPhase.OpeningDoors)
             {
-                ShowTransientMessage("门机正在动作。", 0.8f);
+                ShowSystemMessage("门机正在动作。", 0.8f);
                 return;
             }
             if (_doorSeal >= 0.98f)
@@ -1002,18 +1018,18 @@ namespace NinetyNine
                 _phase = EvacuationPhase.OpeningDoors;
                 _audio.PlayDoor();
                 EvacuationSignals.Emit(_player.transform.position, 8f, NoiseKind.Door);
-                ShowTransientMessage("电梯门正在打开。", 1.1f);
+                ShowSystemMessage("电梯门开启中。", 1.1f);
                 return;
             }
             if (_doorIntegrity <= 0)
             {
-                ShowTransientMessage("门机已经损坏。", 1.2f);
+                ShowSystemMessage("门控系统故障：需要保险丝。", 1.2f);
                 return;
             }
             _phase = EvacuationPhase.ClosingDoors;
             _audio.PlayDoor();
             EvacuationSignals.Emit(_player.transform.position, 10f, NoiseKind.Door);
-            ShowTransientMessage("门控已启动。关门不会自动启动电梯。", 1.5f);
+            ShowSystemMessage("电梯门关闭中。", 1.5f);
         }
 
         private void UpdateDescent()
@@ -1061,7 +1077,7 @@ namespace NinetyNine
             _brakeTimer = 1.15f;
             _audio.PlayBrake();
             _player.AddElevatorImpulse(1f);
-            ShowTransientMessage("机械制动已接合。停车不消耗电力。", 1.3f);
+            ShowSystemMessage("机械制动已接合。", 1.3f);
         }
 
         private void CompleteStop()
@@ -1097,7 +1113,7 @@ namespace NinetyNine
             }
             _automationVisitedFloor = false;
             _phoneAnsweredThisFloor = false;
-            ShowTransientMessage(reachedNewFloor
+            ShowSystemMessage(reachedNewFloor
                 ? "电梯已停稳。使用门控打开门。"
                 : "制动过早，电梯仍停在原楼层。门外状态没有重置。", 1.8f);
         }
@@ -1128,11 +1144,12 @@ namespace NinetyNine
                     return;
                 }
                 _phase = EvacuationPhase.Stopped;
-                ShowTransientMessage("抵达一层。出口没有自动开启——去大厅尽头验证终端。", 3.2f);
+                ShowSystemMessage("抵达一层。出口验证未完成。", 2.4f);
+                _narrative.QueueThought("大厅尽头还有一台终端。真正的出口不会这么轻易打开。", 3.2f);
                 return;
             }
             _phase = EvacuationPhase.Stopped;
-            ShowTransientMessage("抵达 " + _currentFloor + " 层。门外没有任何预警。", 2f);
+            ShowSystemMessage("抵达 " + _currentFloor + " 层。楼层扫描无可用结果。", 2f);
         }
 
         private void UpdateInteraction()
@@ -1308,10 +1325,8 @@ namespace NinetyNine
             int outcome = Mathf.Abs((_currentPlan != null ? _currentPlan.Seed : RunSeed) % 3);
             if (outcome == 0)
             {
-                bool discovered = _story.Discover("phone_" + Mathf.Abs(_currentFloor % 7));
-                ShowTransientMessage(discovered
-                    ? "听筒里是你自己的声音：不要相信绿色出口灯。线索 +1。"
-                    : "听筒里只有你几分钟前的呼吸声。", 3f);
+                bool discovered = DiscoverStoryClue("phone_" + Mathf.Abs(_currentFloor % 7), true);
+                if (!discovered) ShowTransientMessage("听筒里只有你几分钟前的呼吸声。", 3f);
             }
             else if (outcome == 1)
             {
@@ -1340,7 +1355,7 @@ namespace NinetyNine
                     _carryingCell = false;
                     _carriedCellCharge = 0f;
                     _audio.PlayPickup();
-                    ShowTransientMessage("电池已安装。当前电量 " + Mathf.CeilToInt(_power) + " / 26。", 1.6f);
+                    ShowSystemMessage("电池已接入。当前电量 " + Mathf.CeilToInt(_power) + " / 26。", 1.6f);
                 }
                 else if (!_storedCell)
                 {
@@ -1348,11 +1363,11 @@ namespace NinetyNine
                     _storedCellCharge = Mathf.Max(EmergencyCellCharge, _carriedCellCharge);
                     _carryingCell = false;
                     _carriedCellCharge = 0f;
-                    ShowTransientMessage("备用架只能存放这一块电池。", 1.4f);
+                    ShowSystemMessage("备用架已占用。", 1.4f);
                 }
                 else
                 {
-                    ShowTransientMessage("电池已满，备用架也被占用。", 1.4f);
+                    ShowSystemMessage("电池满载，备用架已占用。", 1.4f);
                 }
                 return;
             }
@@ -1362,24 +1377,24 @@ namespace NinetyNine
                 _power = Mathf.Min(MaxPower, _power + Mathf.Max(EmergencyCellCharge, _storedCellCharge));
                 _storedCellCharge = 0f;
                 _audio.PlayPickup();
-                ShowTransientMessage("备用电池已接入。", 1.2f);
+                ShowSystemMessage("备用电池已接入。", 1.2f);
                 return;
             }
-            ShowTransientMessage("没有可安装的电池。", 1.1f);
+            ShowSystemMessage("未检测到可安装电池。", 1.1f);
         }
 
         private void InstallFuse()
         {
             if (!_hasFuse)
             {
-                ShowTransientMessage("缺少保险丝。", 1.1f);
+                ShowSystemMessage("维修失败：缺少保险丝。", 1.1f);
                 return;
             }
             _hasFuse = false;
             _doorIntegrity = MaxDoorIntegrity;
             _power = Mathf.Min(MaxPower, _power + 3f);
             _audio.PlayPickup();
-            ShowTransientMessage("门机恢复，备用线路返还 3 点电力。", 1.5f);
+            ShowSystemMessage("门控恢复，备用线路返还 3 点电力。", 1.5f);
         }
 
         private void UsePowerExchange(EvacuationInteractable machine)
@@ -1523,7 +1538,8 @@ namespace NinetyNine
                     ? (float)_gameplayRandom.NextDouble() : 0.5f);
                 npc.ArmMimic(duration);
             }
-            ShowTransientMessage("乘客已进入电梯。目的地 " + npc.DestinationFloor + " 层。", 1.7f);
+            _narrative.ShowNpcMessage(npc.DisplayName,
+                "请送我去 " + npc.DestinationFloor + " 层。别错过。", 2.2f);
         }
 
         public void TryExpelNpc(EvacuationNpc npc)
@@ -1582,9 +1598,10 @@ namespace NinetyNine
             {
                 string clueId;
                 _dialogueText = _dialogueNpc.Question(out clueId);
-                if (_story.Discover(clueId))
+                if (DiscoverStoryClue(clueId, false))
                 {
-                    _dialogueText += "\n[获得一条证词]";
+                    StoryClue clue = _story.LatestClue;
+                    _dialogueText += "\n\n[" + clue.Title + "] " + clue.Excerpt;
                 }
                 return;
             }
@@ -1608,8 +1625,15 @@ namespace NinetyNine
             }
             if (choice == 5)
             {
+                if (_acceptedAdministrator)
+                {
+                    _dialogueText = "协议上的手印已经变黑。对方不再回答你的问题。";
+                    return;
+                }
                 _acceptedAdministrator = true;
-                _dialogueText = "你在没有文字的协议上按下手印。电梯播报：管理员权限已转移。";
+                _dialogueText = "你在没有文字的协议上按下手印。轿厢里的楼层数字同时熄灭了一秒。";
+                _audio.PlayNarrativeCue();
+                ShowBuildingMessage("身份交接已记录。管理员候选人，请继续前往一楼。", 3.4f);
                 return;
             }
             CloseNpcDialogue();
@@ -1630,9 +1654,8 @@ namespace NinetyNine
         private void CollectEvidence(EvacuationInteractable evidence)
         {
             if (evidence == null) return;
-            bool discovered = _story.Discover(evidence.EvidenceId);
-            ShowTransientMessage(discovered ? "档案记录与已知楼层矛盾。线索 +1。" :
-                "这是已经见过的重复记录。", 1.8f);
+            bool discovered = DiscoverStoryClue(evidence.EvidenceId, true);
+            if (!discovered) ShowTransientMessage("这页档案我已经看过了。", 1.8f);
             EvacuationSignals.Emit(evidence.transform.position, 6f, NoiseKind.Pickup);
             _world.NotifyFloorLooted();
             _world.ReleaseDynamicObject(evidence.gameObject);
@@ -1653,6 +1676,50 @@ namespace NinetyNine
                 _world.SetParasiteActive(true);
                 ShowTransientMessage("电池槽旁多出了一团脉动电缆。停靠时正在持续漏电。", 3f);
             }
+            else if (plan.Event == FloorEventKind.WrongFloorNumber)
+            {
+                ShowSystemMessage("楼层识别失败：编号超出建筑档案。", 2.6f);
+            }
+            else if (plan.Event == FloorEventKind.PassengerMismatch)
+            {
+                ShowTransientMessage("镜面里的人数，比轿厢登记多了一个。", 2.8f);
+            }
+            else if (plan.Event == FloorEventKind.UnsyncedShadow)
+            {
+                ShowTransientMessage("灯亮的时候，我的影子慢了半拍。", 2.6f);
+            }
+            else if (plan.Event == FloorEventKind.SequentialBlackout)
+            {
+                ShowBuildingMessage("夜间节能程序已启动。请留在原工位。", 2.8f);
+            }
+        }
+
+        private bool DiscoverStoryClue(string clueId, bool showSubtitle)
+        {
+            StoryAct previousAct = _story.Act;
+            if (!_story.Discover(clueId)) return false;
+            StoryClue clue = _story.LatestClue;
+            if (_story.Act != previousAct)
+            {
+                if (_story.Act == StoryAct.Remembered)
+                {
+                    ShowBuildingMessage("员工档案校验失败。检测到未注销的目击者。", 3.5f);
+                }
+                else if (_story.Act == StoryAct.Witnessed)
+                {
+                    ShowBuildingMessage("管理员席位空缺。交接协议正在寻找签署人。", 3.8f);
+                }
+                _audio.PlayNarrativeCue();
+                if (showSubtitle && clue != null)
+                {
+                    _narrative.QueueThought(clue.Title + "：" + clue.Excerpt, 4.2f);
+                }
+            }
+            else if (showSubtitle && clue != null)
+            {
+                ShowTransientMessage(clue.Title + "：" + clue.Excerpt, 4.2f);
+            }
+            return true;
         }
 
         private void UpdatePassengers()
@@ -1818,15 +1885,30 @@ namespace NinetyNine
                 _story.Resolve(carriesMimic, _rescued, _acceptedAdministrator);
             if (resolution == ExitResolution.FalseLoop)
             {
+                _loopCount++;
                 _currentFloor = 99;
                 _floorFloat = 99f;
                 _power = Mathf.Max(_power, 6f);
-                _world.BuildFloor(_floorDirector.CreatePlan(RunSeed, 99, _power, _floorsVisited));
+                EvacuationFloorPlan loopPlan = _floorDirector.CreatePlan(
+                    RunSeed ^ (_loopCount * 7919), 99, _power, _floorsVisited);
+                loopPlan.Theme = _loopCount % 2 == 0 ? EvacuationTheme.Hospital : EvacuationTheme.RedHall;
+                loopPlan.Event = FloorEventKind.PassengerMismatch;
+                loopPlan.Pressure = FloorPressure.Anomaly;
+                loopPlan.Layout = FloorLayoutKind.CentralHub;
+                loopPlan.Length = 9;
+                loopPlan.Blackout = false;
+                loopPlan.Distorted = true;
+                loopPlan.SpawnMonster = false;
+                loopPlan.SpawnNpc = true;
+                loopPlan.SpawnEvidence = true;
+                loopPlan.IsStartingFloor = false;
+                _world.BuildFloor(loopPlan);
                 _doorSeal = 0f;
                 _world.SetDoorSeal(0f);
                 _world.SetBarrier(false);
                 _phase = EvacuationPhase.Stopped;
-                ShowTransientMessage("门外仍是第 99 层。你抵达的是一座假大厅。", 4f);
+                ShowBuildingMessage("出口验证失败。目击记录不足。返回第九十九层。", 3.8f);
+                _narrative.QueueThought("这不是刚才的九十九层。它记得我来过，也在等我继续找下去。", 4f);
                 return;
             }
             if (resolution == ExitResolution.MimicTakeover)
@@ -1893,6 +1975,16 @@ namespace NinetyNine
         public void ShowTransientMessage(string value, float duration)
         {
             if (_narrative != null) _narrative.ShowThought(value, duration);
+        }
+
+        private void ShowSystemMessage(string value, float duration)
+        {
+            if (_narrative != null) _narrative.ShowSystemMessage(value, duration);
+        }
+
+        private void ShowBuildingMessage(string value, float duration)
+        {
+            if (_narrative != null) _narrative.ShowBuildingMessage(value, duration);
         }
 
         private void OnGUI()
@@ -1972,16 +2064,23 @@ namespace NinetyNine
             GUI.Label(statusCard, CurrentElevatorStatus(), _centerStyle);
 
             float left = 24f * scale;
-            float top = Screen.height - 118f * scale;
-            GUI.Label(new Rect(left, top, 280f * scale, 28f * scale),
-                "生命  " + Mathf.CeilToInt(_health), _smallStyle);
-            DrawBar(new Rect(left, top + 30f * scale, 260f * scale, 10f * scale),
-                _health / 100f, new Color(0.86f, 0.04f, 0.025f));
-            GUI.Label(new Rect(left, top + 46f * scale, 280f * scale, 28f * scale),
-                "体力  " + Mathf.CeilToInt(_player.Stamina01 * 100f), _smallStyle);
-            DrawBar(new Rect(left, top + 76f * scale, 260f * scale, 10f * scale),
-                _player.Stamina01, new Color(0.08f, 0.82f, 0.68f));
-            if (_hasFlashlight)
+            float resourceY = Screen.height - 44f * scale;
+            if (_health < 99.5f)
+            {
+                GUI.Label(new Rect(left, resourceY - 26f * scale, 280f * scale, 24f * scale),
+                    "生命  " + Mathf.CeilToInt(_health), _smallStyle);
+                DrawBar(new Rect(left, resourceY, 260f * scale, 8f * scale),
+                    _health / 100f, new Color(0.86f, 0.04f, 0.025f));
+                resourceY -= 44f * scale;
+            }
+            if (_player.Stamina01 < 0.98f)
+            {
+                GUI.Label(new Rect(left, resourceY - 26f * scale, 280f * scale, 24f * scale),
+                    "体力  " + Mathf.CeilToInt(_player.Stamina01 * 100f), _smallStyle);
+                DrawBar(new Rect(left, resourceY, 260f * scale, 8f * scale),
+                    _player.Stamina01, new Color(0.08f, 0.82f, 0.68f));
+            }
+            if (_hasFlashlight && (_flashlightOn || _flashCharge <= 20f))
             {
                 GUI.Label(new Rect(Screen.width - 220f * scale, Screen.height - 58f * scale,
                     190f * scale, 28f * scale), "手电电量  " + Mathf.CeilToInt(_flashCharge), _smallStyle);
@@ -1992,9 +2091,11 @@ namespace NinetyNine
                     300f * scale, 30f * scale), "双手搬运：" +
                     (_carriedCellCharge >= FullCellCharge ? "完整电池" : "破损电池"), _smallStyle);
             }
-            GUI.Label(new Rect(Screen.width - 330f * scale, 58f * scale,
-                300f * scale, 28f * scale), "线索 " + _story.ClueCount + " / 6   零件 " + _scrap,
-                _smallStyle);
+            if (_scrap > 0)
+            {
+                GUI.Label(new Rect(Screen.width - 220f * scale, Screen.height - 88f * scale,
+                    190f * scale, 28f * scale), "可交易零件  " + _scrap, _smallStyle);
+            }
         }
 
         private void DrawObjective(float scale)
@@ -2007,7 +2108,8 @@ namespace NinetyNine
             if (!_notebookOpen && passengerCount == 0 &&
                 Time.unscaledTime >= _objectiveRevealUntil) return;
             float width = 340f * scale;
-            float height = (124f + passengerCount * 24f) * scale;
+            float notebookExtra = _notebookOpen ? (_story.LatestClue != null ? 82f : 30f) : 0f;
+            float height = (124f + notebookExtra + passengerCount * 24f) * scale;
             float objectiveTop = Screen.width < 1100 ? 126f * scale : 18f * scale;
             Rect rect = new Rect(20f * scale, objectiveTop, width, height);
             DrawPanel(rect, new Color(1f, 0.52f, 0.12f));
@@ -2018,6 +2120,21 @@ namespace NinetyNine
                 rect.width - 28f * scale, 72f * scale), CurrentObjective(), _objectiveStyle);
 
             float passengerY = rect.y + 104f * scale;
+            if (_notebookOpen)
+            {
+                GUI.Label(new Rect(rect.x + 14f * scale, passengerY,
+                    rect.width - 28f * scale, 24f * scale),
+                    _story.ActTitle() + " · 已发现 " + _story.ClueCount + " 条记录", _smallStyle);
+                passengerY += 26f * scale;
+                StoryClue latest = _story.LatestClue;
+                if (latest != null)
+                {
+                    GUI.Label(new Rect(rect.x + 14f * scale, passengerY,
+                        rect.width - 28f * scale, 54f * scale),
+                        "最近记录｜" + latest.Title + "\n" + latest.Excerpt, _objectiveStyle);
+                    passengerY += 56f * scale;
+                }
+            }
             for (int i = 0; i < _passengers.Count; i++)
             {
                 EvacuationNpc passenger = _passengers[i];
@@ -2031,7 +2148,13 @@ namespace NinetyNine
 
         private string CurrentObjective()
         {
-            const string mainGoal = "从 99 层撤至 1 层，并收集线索破解大楼循环。\n";
+            string mainGoal = _acceptedAdministrator
+                ? "协议已签署：大楼正把我当作下一任管理员。\n"
+                : _story.Act == StoryAct.Witnessed
+                    ? "真相已经接近完整：抵达一楼并终止交接。\n"
+                    : _story.Act == StoryAct.Remembered
+                        ? "大楼在抹除目击者：继续寻找证词与档案。\n"
+                        : "从 99 层撤至 1 层，并查明不存在的电梯。\n";
             if (_currentFloor <= 1)
             {
                 if (_doorSeal > 0.02f) return mainGoal + "当前：打开电梯门，前往大厅尽头。";

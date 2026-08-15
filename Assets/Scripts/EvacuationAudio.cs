@@ -68,12 +68,12 @@ namespace NinetyNine
             _machineClip = CreateMachine();
             _breathClip = CreateBreathing();
             _monsterClip = CreateMonsterBreath();
-            _stepClip = CreateNoiseImpact("Heavy Footstep", 0.19f, 96f, 0.72f, 1001);
-            _metalStepClip = CreateNoiseImpact("Metal Footstep", 0.14f, 162f, 0.6f, 1811);
-            _wetStepClip = CreateNoiseImpact("Wet Footstep", 0.22f, 58f, 0.56f, 2711);
+            _stepClip = CreateSoftFootstep("Soft Floor Footstep", 0.2f, 78f, 0.045f, 0.38f, 1001);
+            _metalStepClip = CreateSoftFootstep("Soft Metal Footstep", 0.18f, 132f, 0.08f, 0.32f, 1811);
+            _wetStepClip = CreateSoftFootstep("Soft Wet Footstep", 0.24f, 48f, 0.025f, 0.34f, 2711);
             _doorClip = CreateMetalSweep();
             _brakeClip = CreateToneSweep("Mechanical Brake", 175f, 48f, 0.75f, 0.62f);
-            _railClip = CreateNoiseImpact("Rail Joint", 0.16f, 86f, 0.38f, 1207);
+            _railClip = CreateCableCreak("Cabin Cable Creak", 0.9f, 37f, 51f, 1207);
             _buttonClip = CreateToneSweep("Mechanical Button", 540f, 210f, 0.11f, 0.26f);
             _pickupClip = CreateToneSweep("Object Pickup", 260f, 620f, 0.16f, 0.22f);
             _hitClip = CreateNoiseImpact("Body Hit", 0.42f, 58f, 0.9f, 7701);
@@ -86,20 +86,20 @@ namespace NinetyNine
             _stepVariants = new[]
             {
                 _stepClip,
-                CreateNoiseImpact("Heavy Footstep B", 0.18f, 88f, 0.68f, 1069),
-                CreateNoiseImpact("Heavy Footstep C", 0.2f, 104f, 0.64f, 1123)
+                CreateSoftFootstep("Soft Floor Footstep B", 0.19f, 72f, 0.04f, 0.36f, 1069),
+                CreateSoftFootstep("Soft Floor Footstep C", 0.21f, 84f, 0.05f, 0.34f, 1123)
             };
             _metalStepVariants = new[]
             {
                 _metalStepClip,
-                CreateNoiseImpact("Metal Footstep B", 0.13f, 176f, 0.56f, 1877),
-                CreateNoiseImpact("Metal Footstep C", 0.16f, 148f, 0.62f, 1931)
+                CreateSoftFootstep("Soft Metal Footstep B", 0.17f, 143f, 0.075f, 0.3f, 1877),
+                CreateSoftFootstep("Soft Metal Footstep C", 0.19f, 121f, 0.085f, 0.31f, 1931)
             };
             _wetStepVariants = new[]
             {
                 _wetStepClip,
-                CreateNoiseImpact("Wet Footstep B", 0.24f, 51f, 0.58f, 2789),
-                CreateNoiseImpact("Wet Footstep C", 0.2f, 67f, 0.52f, 2851)
+                CreateSoftFootstep("Soft Wet Footstep B", 0.26f, 43f, 0.022f, 0.33f, 2789),
+                CreateSoftFootstep("Soft Wet Footstep C", 0.22f, 55f, 0.028f, 0.31f, 2851)
             };
             _doorVariants = new[]
             {
@@ -110,8 +110,8 @@ namespace NinetyNine
             _railVariants = new[]
             {
                 _railClip,
-                CreateNoiseImpact("Rail Joint B", 0.18f, 72f, 0.4f, 1277),
-                CreateNoiseImpact("Rail Joint C", 0.14f, 101f, 0.34f, 1321)
+                CreateCableCreak("Cabin Cable Creak B", 1.15f, 31f, 46f, 1277),
+                CreateCableCreak("Cabin Cable Creak C", 0.72f, 44f, 34f, 1321)
             };
 
             _ambience = CreateSource("Floor Ambience", false, true, 0.34f);
@@ -334,19 +334,20 @@ namespace NinetyNine
 
             if (_travelling && Time.time >= _nextRailTime)
             {
-                _nextRailTime = Time.time + RandomRange(0.82f, 1.28f);
-                _oneShot.pitch = RandomRange(0.86f, 1.06f);
-                _oneShot.PlayOneShot(RandomClip(_railVariants), 0.42f);
+                _nextRailTime = Time.time + RandomRange(2.4f, 5.8f);
+                _oneShot.pitch = RandomRange(0.92f, 1.03f);
+                _oneShot.PlayOneShot(RandomClip(_railVariants), 0.18f);
             }
 
-            if (_player.MovementAmount > 0.2f && Time.time >= _nextStepTime)
+            if (ShouldPlayFootstep(_travelling, _player.HasMovementInput, _player.MovementAmount) &&
+                Time.time >= _nextStepTime)
             {
                 float pace = _player.IsSprinting ? 0.29f : 0.48f;
                 _nextStepTime = Time.time + pace;
                 _oneShot.pitch = RandomRange(0.88f, 1.08f);
                 AudioClip step = _surfaceIndex == 1 ? RandomClip(_metalStepVariants) :
                     _surfaceIndex == 2 ? RandomClip(_wetStepVariants) : RandomClip(_stepVariants);
-                _oneShot.PlayOneShot(step, _player.IsSprinting ? 0.7f : 0.4f);
+                _oneShot.PlayOneShot(step, _player.IsSprinting ? 0.48f : 0.27f);
             }
             if (!_travelling && Time.time >= _nextDistantKnock)
             {
@@ -359,6 +360,22 @@ namespace NinetyNine
                     RandomRange(0.9f, 1.06f));
             }
         }
+
+        private static bool ShouldPlayFootstep(bool travelling, bool hasMovementInput,
+            float movementAmount)
+        {
+            return !travelling && hasMovementInput && movementAmount > 0.2f;
+        }
+
+#if UNITY_EDITOR
+        public bool VerifyFootstepGate()
+        {
+            return ShouldPlayFootstep(false, true, 1f) &&
+                !ShouldPlayFootstep(true, true, 1f) &&
+                !ShouldPlayFootstep(false, false, 1f) &&
+                !ShouldPlayFootstep(false, true, 0.1f);
+        }
+#endif
 
         private void PlaySpatial(AudioClip clip, Vector3 position, float volume, float pitch)
         {
@@ -553,6 +570,55 @@ namespace NinetyNine
                 float noise = (float)(random.NextDouble() * 2.0 - 1.0);
                 float wave = Mathf.Sin(time * Mathf.PI * 2f * tone) * 0.45f;
                 samples[i] = (noise * 0.55f + wave) * envelope * volume;
+            }
+            AudioClip clip = AudioClip.Create(clipName, length, 1, rate, false);
+            clip.SetData(samples, 0);
+            return clip;
+        }
+
+        private static AudioClip CreateSoftFootstep(string clipName, float duration, float tone,
+            float brightness, float volume, int seed)
+        {
+            const int rate = 22050;
+            int length = Mathf.RoundToInt(rate * duration);
+            float[] samples = new float[length];
+            System.Random random = new System.Random(seed);
+            float filtered = 0f;
+            for (int i = 0; i < length; i++)
+            {
+                float time = i / (float)rate;
+                float progress = time / duration;
+                float noise = (float)(random.NextDouble() * 2.0 - 1.0);
+                filtered = Mathf.Lerp(filtered, noise, brightness);
+                float attack = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(progress / 0.08f));
+                float envelope = attack * Mathf.Exp(-progress * 5.2f) * (1f - progress);
+                float body = Mathf.Sin(time * Mathf.PI * 2f * tone) * 0.42f;
+                samples[i] = (body + filtered * 0.34f) * envelope * volume;
+            }
+            AudioClip clip = AudioClip.Create(clipName, length, 1, rate, false);
+            clip.SetData(samples, 0);
+            return clip;
+        }
+
+        private static AudioClip CreateCableCreak(string clipName, float duration, float from,
+            float to, int seed)
+        {
+            const int rate = 22050;
+            int length = Mathf.RoundToInt(rate * duration);
+            float[] samples = new float[length];
+            System.Random random = new System.Random(seed);
+            float filtered = 0f;
+            for (int i = 0; i < length; i++)
+            {
+                float time = i / (float)rate;
+                float progress = time / duration;
+                float noise = (float)(random.NextDouble() * 2.0 - 1.0);
+                filtered = Mathf.Lerp(filtered, noise, 0.009f);
+                float frequency = Mathf.Lerp(from, to, Mathf.SmoothStep(0f, 1f, progress));
+                float envelope = Mathf.Pow(Mathf.Sin(progress * Mathf.PI), 1.6f);
+                float steel = Mathf.Sin(time * Mathf.PI * 2f * frequency) * 0.22f;
+                steel += Mathf.Sin(time * Mathf.PI * 2f * frequency * 2.03f) * 0.055f;
+                samples[i] = (steel + filtered * 0.12f) * envelope;
             }
             AudioClip clip = AudioClip.Create(clipName, length, 1, rate, false);
             clip.SetData(samples, 0);

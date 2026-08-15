@@ -35,6 +35,7 @@ namespace NinetyNine
         public Camera ViewCamera => _camera;
         public float Stamina01 => _stamina / 100f;
         public float MovementAmount { get; private set; }
+        public bool HasMovementInput { get; private set; }
         public bool IsSprinting { get; private set; }
         public bool IsCrouching { get; private set; }
         public bool IsHidden => _hidden;
@@ -66,6 +67,7 @@ namespace NinetyNine
             _stamina = 100f;
             _sprintRecoveryDelay = 0f;
             MovementAmount = 0f;
+            HasMovementInput = false;
             IsSprinting = false;
             _elevatorMotion = 0f;
             _elevatorImpulse = 0f;
@@ -89,6 +91,8 @@ namespace NinetyNine
         {
             if (!CanMove || _controller == null || _camera == null)
             {
+                MovementAmount = 0f;
+                HasMovementInput = false;
                 return;
             }
 
@@ -99,6 +103,7 @@ namespace NinetyNine
             if (_cursorReleased)
             {
                 MovementAmount = 0f;
+                HasMovementInput = false;
                 return;
             }
             ForceCursorLock();
@@ -110,12 +115,14 @@ namespace NinetyNine
             if (_hidden)
             {
                 MovementAmount = 0f;
+                HasMovementInput = false;
                 UpdateCameraMotion(0f);
                 return;
             }
 
             Vector2 input = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
             input = Vector2.ClampMagnitude(input, 1f);
+            HasMovementInput = input.sqrMagnitude > 0.05f;
             if (Input.GetKeyDown(KeyCode.C) || Input.GetKeyDown(KeyCode.LeftControl) ||
                 Input.GetKeyDown(KeyCode.RightControl))
             {
@@ -259,6 +266,7 @@ namespace NinetyNine
             HiddenSince = Time.time;
             IsSprinting = false;
             MovementAmount = 0f;
+            HasMovementInput = false;
         }
 
         public void ExitHidingSpot()
