@@ -18,7 +18,7 @@ namespace NinetyNine
 
     public sealed class NinetyNineEvacuationGame : MonoBehaviour
     {
-        private static readonly Vector2Int[] SupportedResolutions =
+        private static readonly Vector2Int[] DefaultResolutions =
         {
             new Vector2Int(1280, 720),
             new Vector2Int(1600, 900),
@@ -44,6 +44,7 @@ namespace NinetyNine
         private const float CriticalTimeWarning = 60f;
 
         private readonly List<EvacuationNpc> _passengers = new List<EvacuationNpc>();
+        private readonly List<Vector2Int> _supportedResolutions = new List<Vector2Int>();
         private readonly RaycastHit[] _interactionHits = new RaycastHit[16];
         private EvacuationFloorGenerator _world;
         private FirstPersonController _player;
@@ -82,6 +83,7 @@ namespace NinetyNine
         private float _masterVolume = 1f;
         private float _brightness = 1f;
         private int _currentFloor;
+        private int _departureFloor;
         private int _doorIntegrity;
         private int _floorsVisited;
         private int _rescued;
@@ -102,6 +104,8 @@ namespace NinetyNine
         private bool _showLauncherSettings;
         private bool _fullscreen;
         private bool _phoneAnsweredThisFloor;
+        private bool _parasiteActive;
+        private System.Random _gameplayRandom;
         private int _resolutionIndex = 2;
         private string _message = string.Empty;
         private string _dialogueText = string.Empty;
@@ -137,6 +141,7 @@ namespace NinetyNine
             _world = gameObject.AddComponent<EvacuationFloorGenerator>();
             _world.Initialize(this, _audio);
             _player = _world.Player;
+            BuildResolutionList();
             LoadPlayerSettings();
             ShowTitle();
 #if !UNITY_EDITOR
@@ -210,6 +215,7 @@ namespace NinetyNine
                     Debug.Log("EVACUATION_PASSENGER_TASK_UI_STATE_TEST=PASS DESTINATION=" +
                         passengerForCapture.DestinationFloor);
                 }
+                UnityEditor.EditorApplication.Exit(0);
                 yield break;
             }
 
@@ -247,6 +253,7 @@ namespace NinetyNine
                 yield return new WaitForSeconds(0.35f);
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot, "EvacuationMonsterBreach.png"));
                 Debug.Log("EVACUATION_MONSTER_BREACH_TEST=" + (_phase == EvacuationPhase.Lost ? "PASS" : "FAIL"));
+                UnityEditor.EditorApplication.Exit(0);
                 yield break;
             }
 
@@ -268,6 +275,7 @@ namespace NinetyNine
                 yield return new WaitForSeconds(0.5f);
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot, "EvacuationFailure.png"));
                 Debug.Log("EVACUATION_FAILURE_TEST=PASS");
+                UnityEditor.EditorApplication.Exit(0);
                 yield break;
             }
 
@@ -387,6 +395,28 @@ namespace NinetyNine
             Debug.Log("EVACUATION_RANGE_REJECT_TEST=" + (rangeRejected ? "PASS" : "FAIL"));
             Debug.Log("EVACUATION_YAW_720_TEST=" + (_player.VerifyUnclampedYaw() ? "PASS" : "FAIL"));
             Debug.Log("EVACUATION_CROUCH_TOGGLE_TEST=" + (_player.VerifyCrouchToggle() ? "PASS" : "FAIL"));
+            Debug.Log("EVACUATION_CROUCH_HEADROOM_TEST=" +
+                (_player.VerifyBlockedStandUp() ? "PASS" : "FAIL"));
+            _world.BuildFloor(_floorDirector.CreatePlan(RunSeed, 1, _power, _floorsVisited));
+            EvacuationInteractable terminal = Array.Find(FindObjectsOfType<EvacuationInteractable>(),
+                value => value != null && value.Action == EvacuationAction.ExitTerminal);
+            bool terminalRayPassed = false;
+            if (terminal != null)
+            {
+                CharacterController terminalController = _player.GetComponent<CharacterController>();
+                terminalController.enabled = false;
+                _player.transform.position = terminal.transform.position + new Vector3(0f, -0.74f, -2f);
+                terminalController.enabled = true;
+                Physics.SyncTransforms();
+                Vector3 terminalDirection = (terminal.transform.position -
+                    _player.ViewCamera.transform.position).normalized;
+                _player.ViewCamera.transform.rotation = Quaternion.LookRotation(terminalDirection, Vector3.up);
+                terminalRayPassed = FindInteractionFocus(_player.ViewCamera) == terminal;
+            }
+            Debug.Log("EVACUATION_EXIT_TERMINAL_RAY_TEST=" +
+                (terminalRayPassed ? "PASS" : "FAIL"));
+            _world.BuildFloor(_floorDirector.CreatePlan(RunSeed, 99, _power, _floorsVisited));
+            _player.ResetInsideCabin();
             float doorPowerBefore = _power;
             ToggleDoors();
             yield return new WaitForSeconds(0.45f);
@@ -403,6 +433,9 @@ namespace NinetyNine
                 (Mathf.Abs(_power - doorPowerBefore) < 0.01f ? "PASS" : "FAIL"));
 
             yield return new WaitForSeconds(0.2f);
+            int preservedFloorId = _world.CurrentFloorInstanceId;
+            int preservedPickupCount = _world.CurrentPickupCount;
+            int preservedVisited = _floorsVisited;
             BeginDescent();
             yield return new WaitForSeconds(0.2f);
             _power = 0.01f;
@@ -413,6 +446,11 @@ namespace NinetyNine
             }
             bool lowPowerStopPassed = _phase == EvacuationPhase.Stopped && _doorSeal > 0.99f;
             Debug.Log("EVACUATION_LOW_POWER_STOP_TEST=" + (lowPowerStopPassed ? "PASS" : "FAIL"));
+            bool sameFloorPreserved = _world.CurrentFloorInstanceId == preservedFloorId &&
+                _world.CurrentPickupCount == preservedPickupCount && _floorsVisited == preservedVisited;
+            Debug.Log("EVACUATION_SAME_FLOOR_PRESERVE_TEST=" +
+                (sameFloorPreserved ? "PASS" : "FAIL") + " FLOOR_ID=" + preservedFloorId +
+                " PICKUPS=" + preservedPickupCount);
             float remainingTimeBeforeWarning = _remainingTime;
             _remainingTime = CriticalTimeWarning - 5f;
             yield return new WaitForEndOfFrame();
@@ -474,6 +512,7 @@ namespace NinetyNine
                 (_world.CreatedPrimitiveCount < 1400 ? "PASS" : "FAIL") +
                 " CREATED=" + _world.CreatedPrimitiveCount +
                 " AVAILABLE=" + _world.PooledPrimitiveCount);
+            UnityEditor.EditorApplication.Exit(0);
         }
 #endif
 
@@ -587,14 +626,23 @@ namespace NinetyNine
             _player.LookSensitivity = PlayerPrefs.GetFloat("Evacuation.LookSensitivity", 2.6f);
             _masterVolume = PlayerPrefs.GetFloat("Evacuation.MasterVolume", 0.9f);
             _brightness = PlayerPrefs.GetFloat("Evacuation.Brightness", 1f);
-            _resolutionIndex = Mathf.Clamp(PlayerPrefs.GetInt("Evacuation.Resolution", 2),
-                0, SupportedResolutions.Length - 1);
+            int savedWidth = PlayerPrefs.GetInt("Evacuation.ResolutionWidth", 1920);
+            int savedHeight = PlayerPrefs.GetInt("Evacuation.ResolutionHeight", 1080);
+            _resolutionIndex = _supportedResolutions.FindIndex(value =>
+                value.x == savedWidth && value.y == savedHeight);
+            if (_resolutionIndex < 0)
+            {
+                _resolutionIndex = Mathf.Clamp(_supportedResolutions.FindIndex(value =>
+                    value.x == Screen.currentResolution.width &&
+                    value.y == Screen.currentResolution.height), 0, _supportedResolutions.Count - 1);
+            }
             _fullscreen = PlayerPrefs.GetInt("Evacuation.Fullscreen", 1) != 0;
             AudioListener.volume = _masterVolume;
             AnalogPostEffect.DisplayBrightness = _brightness;
 #if !UNITY_EDITOR
-            Vector2Int resolution = SupportedResolutions[_resolutionIndex];
-            Screen.SetResolution(resolution.x, resolution.y, _fullscreen);
+            Vector2Int resolution = _supportedResolutions[_resolutionIndex];
+            Screen.SetResolution(resolution.x, resolution.y,
+                _fullscreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed);
 #endif
         }
 
@@ -603,7 +651,9 @@ namespace NinetyNine
             PlayerPrefs.SetFloat("Evacuation.LookSensitivity", _player.LookSensitivity);
             PlayerPrefs.SetFloat("Evacuation.MasterVolume", _masterVolume);
             PlayerPrefs.SetFloat("Evacuation.Brightness", _brightness);
-            PlayerPrefs.SetInt("Evacuation.Resolution", _resolutionIndex);
+            Vector2Int resolution = _supportedResolutions[_resolutionIndex];
+            PlayerPrefs.SetInt("Evacuation.ResolutionWidth", resolution.x);
+            PlayerPrefs.SetInt("Evacuation.ResolutionHeight", resolution.y);
             PlayerPrefs.SetInt("Evacuation.Fullscreen", _fullscreen ? 1 : 0);
             PlayerPrefs.SetInt("Evacuation.LauncherConfigured", 1);
             PlayerPrefs.Save();
@@ -611,9 +661,36 @@ namespace NinetyNine
 
         private void ApplyDisplaySettings()
         {
-            Vector2Int resolution = SupportedResolutions[_resolutionIndex];
-            Screen.SetResolution(resolution.x, resolution.y, _fullscreen);
+            Vector2Int resolution = _supportedResolutions[_resolutionIndex];
+            Screen.SetResolution(resolution.x, resolution.y,
+                _fullscreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed);
             SavePlayerSettings();
+        }
+
+        private void BuildResolutionList()
+        {
+            _supportedResolutions.Clear();
+            Resolution[] available = Screen.resolutions;
+            for (int i = 0; i < available.Length; i++)
+            {
+                Vector2Int value = new Vector2Int(available[i].width, available[i].height);
+                if (value.x < 1024 || value.y < 576 || _supportedResolutions.Contains(value)) continue;
+                _supportedResolutions.Add(value);
+            }
+            for (int i = 0; i < DefaultResolutions.Length; i++)
+            {
+                if (!_supportedResolutions.Contains(DefaultResolutions[i]))
+                    _supportedResolutions.Add(DefaultResolutions[i]);
+            }
+            Vector2Int current = new Vector2Int(Screen.currentResolution.width,
+                Screen.currentResolution.height);
+            if (current.x >= 1024 && current.y >= 576 && !_supportedResolutions.Contains(current))
+                _supportedResolutions.Add(current);
+            _supportedResolutions.Sort((left, right) =>
+            {
+                int area = (left.x * left.y).CompareTo(right.x * right.y);
+                return area != 0 ? area : left.x.CompareTo(right.x);
+            });
         }
 
         private void SetPaused(bool paused)
@@ -643,16 +720,18 @@ namespace NinetyNine
             {
                 RunSeed = unchecked(Environment.TickCount * 397) ^ DateTime.Now.Millisecond;
             }
-            UnityEngine.Random.InitState(RunSeed);
+            _gameplayRandom = new System.Random(unchecked(RunSeed * 1103515245) ^ 0x5f3759df);
+            _audio.SetRunSeed(RunSeed);
             _floorDirector = new EvacuationFloorDirector();
             foreach (EvacuationNpc passenger in _passengers)
             {
-                if (passenger != null) Destroy(passenger.gameObject);
+                if (passenger != null) _world.ReleaseDynamicObject(passenger.gameObject);
             }
             _passengers.Clear();
             _phase = EvacuationPhase.Stopped;
             _currentFloor = 99;
             _floorFloat = 99f;
+            _departureFloor = 99;
             _power = 19f;
             _remainingTime = RunDuration;
             _health = 100f;
@@ -694,7 +773,8 @@ namespace NinetyNine
 
         private void UpdateStopped()
         {
-            _power = Mathf.Max(0f, _power - IdleDrain * Time.deltaTime);
+            float parasiteDrain = _parasiteActive ? 0.14f : 0f;
+            _power = Mathf.Max(0f, _power - (IdleDrain + parasiteDrain) * Time.deltaTime);
             if (_power <= 0f)
             {
                 Lose("困 死", "停靠电力耗尽。门机和照明停止工作，楼层里的脚步仍在靠近。");
@@ -719,6 +799,7 @@ namespace NinetyNine
                 return;
             }
             _power -= StartCost;
+            _departureFloor = _currentFloor;
             _phase = EvacuationPhase.Descending;
             _braking = false;
             _descentSpeed = 0f;
@@ -828,6 +909,7 @@ namespace NinetyNine
         {
             _currentFloor = Mathf.Clamp(Mathf.CeilToInt(_floorFloat), 1, 99);
             _floorFloat = _currentFloor;
+            bool reachedNewFloor = _currentFloor < _departureFloor;
             if (_automation)
             {
                 _automationWorstStopError = Mathf.Max(_automationWorstStopError,
@@ -839,16 +921,27 @@ namespace NinetyNine
             _phase = EvacuationPhase.Stopped;
             _doorSeal = 1f;
             _audio.SetTravelling(false);
-            _world.BuildFloor(_floorDirector.CreatePlan(RunSeed, _currentFloor, _power, _floorsVisited));
+            if (reachedNewFloor)
+            {
+                _world.BuildFloor(_floorDirector.CreatePlan(RunSeed, _currentFloor, _power,
+                    _floorsVisited));
+            }
+            else
+            {
+                _world.ResumeFloor();
+            }
             _world.SetDoorSeal(1f);
             _world.SetBarrier(true);
-            if (_currentFloor > 1)
+            if (reachedNewFloor && _currentFloor > 1)
             {
                 _floorsVisited++;
             }
             _automationVisitedFloor = false;
             _phoneAnsweredThisFloor = false;
-            ShowTransientMessage("电梯已停稳。使用门控打开门。", 1.6f);
+            _parasiteActive = false;
+            ShowTransientMessage(reachedNewFloor
+                ? "电梯已停稳。使用门控打开门。"
+                : "制动过早，电梯仍停在原楼层。门外状态没有重置。", 1.8f);
         }
 
         private void UpdateOpeningDoors()
@@ -861,6 +954,7 @@ namespace NinetyNine
             }
 
             _world.SetBarrier(false);
+            _world.SetParasiteActive(false);
             ResolvePassengerDestinations();
             if (_currentFloor <= 1)
             {
@@ -922,6 +1016,7 @@ namespace NinetyNine
                     if (_focus.HidingSpot != null)
                     {
                         _focus.HidingSpot.Enter(_player);
+                        EvacuationSignals.Emit(_player.transform.position, 3.4f, NoiseKind.Door);
                         ShowTransientMessage("你屏住呼吸躲了进去。按 E 离开。", 1.5f);
                     }
                     break;
@@ -933,6 +1028,12 @@ namespace NinetyNine
                     break;
                 case EvacuationAction.ExitTerminal:
                     ResolveExit();
+                    break;
+                case EvacuationAction.PowerExchange:
+                    UsePowerExchange(_focus);
+                    break;
+                case EvacuationAction.ElevatorParasite:
+                    RemoveElevatorParasite();
                     break;
             }
         }
@@ -1033,7 +1134,7 @@ namespace NinetyNine
                 _world.Monster.NotifyTheft(item.transform.position);
             }
             _world.NotifyFloorLooted();
-            Destroy(item.gameObject);
+            _world.ReleaseDynamicObject(item.gameObject);
         }
 
         private void AnswerRingingPhone(EvacuationInteractable phone)
@@ -1061,7 +1162,7 @@ namespace NinetyNine
             }
             _audio.PlayThreatCue(phone.transform.position);
             _world.NotifyFloorLooted();
-            Destroy(phone.gameObject);
+            _world.ReleaseDynamicObject(phone.gameObject);
         }
 
         private void InstallPowerCell()
@@ -1117,6 +1218,49 @@ namespace NinetyNine
             ShowTransientMessage("门机恢复，备用线路返还 3 点电力。", 1.5f);
         }
 
+        private void UsePowerExchange(EvacuationInteractable machine)
+        {
+            if (machine == null) return;
+            float recovered;
+            if (_scrap > 0)
+            {
+                _scrap--;
+                recovered = 4f;
+                ShowTransientMessage("交换机吞下零件，向电梯线路返还 4 点电力。", 2f);
+            }
+            else if (_flashCharge >= 15f)
+            {
+                _flashCharge -= 15f;
+                recovered = 2.5f;
+                ShowTransientMessage("你拆下手电电池接入交换机：电梯 +2.5，手电 -15。", 2.2f);
+            }
+            else
+            {
+                ShowTransientMessage("交换机需要一份零件，或至少 15 点手电电量。", 1.8f);
+                return;
+            }
+            _power = Mathf.Min(MaxPower, _power + recovered);
+            _audio.PlayPickup();
+            EvacuationSignals.Emit(machine.transform.position, 11f, NoiseKind.Machinery);
+            if (_world.Monster != null) _world.Monster.NotifyTheft(machine.transform.position);
+            _world.NotifyFloorLooted();
+            _world.ReleaseDynamicObject(machine.gameObject);
+        }
+
+        private void RemoveElevatorParasite()
+        {
+            if (!_parasiteActive)
+            {
+                ShowTransientMessage("线路上没有异常附着物。", 1.1f);
+                return;
+            }
+            _parasiteActive = false;
+            _world.SetParasiteActive(false);
+            _health = Mathf.Max(1f, _health - 6f);
+            _audio.PlayHit();
+            ShowTransientMessage("寄生物割伤了手，但持续漏电已经停止。生命 -6。", 2.1f);
+        }
+
         private void UpdateFlashlight()
         {
             if (Input.GetKeyDown(KeyCode.F) && _hasFlashlight && _flashCharge > 0f)
@@ -1167,6 +1311,11 @@ namespace NinetyNine
             Lose("闯 入 轿 厢", "门只差最后一掌宽。它侧身挤了进来，下降键不再有意义。");
         }
 
+        public void MonsterFoundHidingSpot()
+        {
+            Lose("藏 身 处", "它听见你钻入藏身处的摩擦声。柜门被从外面缓慢拉开。");
+        }
+
         public void RepelMonster(EvacuationMonster monster)
         {
             if (_phase != EvacuationPhase.Stopped && _phase != EvacuationPhase.ClosingDoors)
@@ -1198,7 +1347,9 @@ namespace NinetyNine
             _passengers.Add(npc);
             if (npc.IsMimic)
             {
-                npc.ArmMimic(UnityEngine.Random.Range(24f, 42f));
+                float duration = Mathf.Lerp(24f, 42f, _gameplayRandom != null
+                    ? (float)_gameplayRandom.NextDouble() : 0.5f);
+                npc.ArmMimic(duration);
             }
             ShowTransientMessage("乘客已进入电梯。目的地 " + npc.DestinationFloor + " 层。", 1.7f);
         }
@@ -1212,7 +1363,7 @@ namespace NinetyNine
             }
             bool mimic = npc.IsMimic;
             _passengers.Remove(npc);
-            Destroy(npc.gameObject);
+            _world.ReleaseDynamicObject(npc.gameObject);
             ShowTransientMessage(mimic ? "它走出电梯后，影子仍留在轿厢里。" :
                 "幸存者被你赶回了楼层。", 1.8f);
         }
@@ -1312,7 +1463,7 @@ namespace NinetyNine
                 "这是已经见过的重复记录。", 1.8f);
             EvacuationSignals.Emit(evidence.transform.position, 6f, NoiseKind.Pickup);
             _world.NotifyFloorLooted();
-            Destroy(evidence.gameObject);
+            _world.ReleaseDynamicObject(evidence.gameObject);
         }
 
         public void NotifyFloorPlan(EvacuationFloorPlan plan)
@@ -1322,10 +1473,13 @@ namespace NinetyNine
             if (plan.Event == FloorEventKind.TimeSlip)
             {
                 _remainingTime = Mathf.Max(0f, _remainingTime - 18f);
+                ShowTransientMessage("电梯钟跳过了十八秒。门外的灰尘却像落了很多年。", 2.8f);
             }
             else if (plan.Event == FloorEventKind.ElevatorParasite)
             {
-                _power = Mathf.Max(0.01f, _power - 1.5f);
+                _parasiteActive = true;
+                _world.SetParasiteActive(true);
+                ShowTransientMessage("电池槽旁多出了一团脉动电缆。停靠时正在持续漏电。", 3f);
             }
         }
 
@@ -1367,13 +1521,13 @@ namespace NinetyNine
                     }
                     _rescued++;
                     _passengers.RemoveAt(i);
-                    Destroy(passenger.gameObject);
+                    _world.ReleaseDynamicObject(passenger.gameObject);
                     ShowTransientMessage("乘客到站。信任决定了回报：+" + reward + " 电力。", 2f);
                 }
                 else if (!passenger.IsMimic && _currentFloor < passenger.DestinationFloor - 1)
                 {
                     _passengers.RemoveAt(i);
-                    Destroy(passenger.gameObject);
+                    _world.ReleaseDynamicObject(passenger.gameObject);
                     ShowTransientMessage("你错过了乘客的目标楼层。对方沉默地离开，没有留下奖励。", 2.2f);
                 }
             }
@@ -1414,9 +1568,12 @@ namespace NinetyNine
                     _automationVisitedFloor = true;
                     if (_power < 24f)
                     {
-                        _carryingCell = true;
-                        _carriedCellCharge = FullCellCharge;
-                        InstallPowerCell();
+                        EvacuationInteractable cell = FindAvailablePowerCell();
+                        if (cell != null)
+                        {
+                            CollectItem(cell);
+                            InstallPowerCell();
+                        }
                     }
                 }
                 if (_stoppedAutomationTime > 0.55f)
@@ -1436,6 +1593,14 @@ namespace NinetyNine
             }
         }
 
+        private static EvacuationInteractable FindAvailablePowerCell()
+        {
+            EvacuationInteractable[] values = FindObjectsOfType<EvacuationInteractable>();
+            return Array.Find(values, value => value != null && value.Action == EvacuationAction.Item &&
+                (value.ItemKind == EvacuationItemKind.PowerCell ||
+                 value.ItemKind == EvacuationItemKind.EmergencyCell));
+        }
+
         private void UpdateWorldState()
         {
             int displayFloor = _currentPlan != null && _currentPlan.Event == FloorEventKind.WrongFloorNumber
@@ -1451,6 +1616,7 @@ namespace NinetyNine
                 _phase == EvacuationPhase.OpeningDoors, _doorIntegrity <= 0);
             _world.SetControlState(EvacuationAction.BatterySlot, _carryingCell || _storedCell, _power < 8f);
             _world.SetControlState(EvacuationAction.FusePanel, _hasFuse, _doorIntegrity <= 0);
+            _audio.SetDoorSeal(_doorSeal);
         }
 
         private bool HasUrgentMimic()
@@ -1694,7 +1860,8 @@ namespace NinetyNine
             }
             float width = 340f * scale;
             float height = (124f + passengerCount * 24f) * scale;
-            Rect rect = new Rect(20f * scale, 18f * scale, width, height);
+            float objectiveTop = Screen.width < 1100 ? 126f * scale : 18f * scale;
+            Rect rect = new Rect(20f * scale, objectiveTop, width, height);
             DrawPanel(rect, new Color(1f, 0.52f, 0.12f));
             GUI.Label(new Rect(rect.x + 14f * scale, rect.y + 5f * scale,
                 rect.width - 28f * scale, 23f * scale), "撤离任务", _smallStyle);
@@ -1716,6 +1883,11 @@ namespace NinetyNine
         private string CurrentObjective()
         {
             const string mainGoal = "从 99 层撤至 1 层，并收集线索破解大楼循环。\n";
+            if (_currentFloor <= 1)
+            {
+                if (_doorSeal > 0.02f) return mainGoal + "当前：打开电梯门，前往大厅尽头。";
+                return mainGoal + "当前：跟随闪烁的橙色灯光，使用出口验证终端。";
+            }
             if (_carryingCell) return mainGoal + "当前：把电池带回轿厢并装入电池槽。";
             if (_phase == EvacuationPhase.Descending)
                 return mainGoal + (_braking ? "当前：电梯正在制动，准备确认停靠层。" :
@@ -1876,17 +2048,17 @@ namespace NinetyNine
             AnalogPostEffect.DisplayBrightness = _brightness;
             y += 64f * scale;
 
-            Vector2Int resolution = SupportedResolutions[_resolutionIndex];
+            Vector2Int resolution = _supportedResolutions[_resolutionIndex];
             if (GUI.Button(new Rect(labelX, y, 48f * scale, 38f * scale), "<"))
             {
-                _resolutionIndex = (_resolutionIndex - 1 + SupportedResolutions.Length) %
-                    SupportedResolutions.Length;
+                _resolutionIndex = (_resolutionIndex - 1 + _supportedResolutions.Count) %
+                    _supportedResolutions.Count;
             }
             GUI.Label(new Rect(labelX + 58f * scale, y, 190f * scale, 38f * scale),
                 resolution.x + " × " + resolution.y, _centerStyle);
             if (GUI.Button(new Rect(labelX + 250f * scale, y, 48f * scale, 38f * scale), ">"))
             {
-                _resolutionIndex = (_resolutionIndex + 1) % SupportedResolutions.Length;
+                _resolutionIndex = (_resolutionIndex + 1) % _supportedResolutions.Count;
             }
             if (GUI.Button(new Rect(labelX + 316f * scale, y, 185f * scale, 38f * scale),
                 _fullscreen ? "全屏模式" : "窗口模式"))

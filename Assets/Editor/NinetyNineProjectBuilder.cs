@@ -50,7 +50,7 @@ namespace NinetyNineEditor
                     .Select(scene => scene.path).ToArray(),
                 locationPathName = outputPath,
                 target = BuildTarget.StandaloneWindows64,
-                options = BuildOptions.None
+                options = BuildOptions.CompressWithLz4HC
             };
             UnityEditor.Build.Reporting.BuildReport report = BuildPipeline.BuildPlayer(options);
             if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
@@ -70,6 +70,7 @@ namespace NinetyNineEditor
             string[] requiredShaderNames =
             {
                 "Standard",
+                "Unlit/Texture",
                 "Particles/Standard Unlit",
                 "Hidden/NinetyNine/AnalogHorror"
             };
@@ -110,15 +111,11 @@ namespace NinetyNineEditor
 
             ConfigureTexture("Assets/Resources/Art/title_hall.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/brass_tile.png", true, 1024);
-            ConfigureTexture("Assets/Resources/Art/wall_tile.png", true, 1024);
-            ConfigureTexture("Assets/Resources/Art/hospital_tile.png", true, 1024);
-            ConfigureTexture("Assets/Resources/Art/office_wall.png", true, 1024);
-            ConfigureTexture("Assets/Resources/Art/apartment_wall.png", true, 1024);
-            ConfigureTexture("Assets/Resources/Art/maintenance_metal.png", true, 1024);
             ConfigureTexture("Assets/Resources/Art/modular_surface_atlas.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/anomaly_decal_atlas.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/survival_item_atlas_v2.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/building_signage_atlas_v2.png", false, 2048);
+            ConfigureTexture("Assets/Resources/Art/elevator_control_atlas_v3.png", false, 2048);
 
             bool sceneExists = AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath) != null;
             if (!sceneExists)
@@ -179,15 +176,24 @@ namespace NinetyNineEditor
             HashSet<EvacuationTheme> themes = new HashSet<EvacuationTheme>();
             HashSet<FloorEventKind> events = new HashSet<FloorEventKind>();
             bool valid = true;
-            for (int seed = 1; seed <= 100; seed++)
+            bool deterministic = true;
+            for (int seed = 1; seed <= 1000; seed++)
             {
                 EvacuationFloorDirector director = new EvacuationFloorDirector();
+                EvacuationFloorDirector replayDirector = new EvacuationFloorDirector();
                 FloorPressure previous = FloorPressure.Recovery;
                 for (int floor = 99; floor >= 1; floor--)
                 {
                     EvacuationFloorPlan plan = director.CreatePlan(seed * 7919, floor, 12f, 99 - floor);
+                    EvacuationFloorPlan replay = replayDirector.CreatePlan(seed * 7919, floor, 12f,
+                        99 - floor);
                     themes.Add(plan.Theme);
                     events.Add(plan.Event);
+                    deterministic &= plan.Seed == replay.Seed && plan.Theme == replay.Theme &&
+                        plan.Event == replay.Event && plan.Pressure == replay.Pressure &&
+                        plan.Monster == replay.Monster && plan.Length == replay.Length &&
+                        plan.SpawnMonster == replay.SpawnMonster && plan.SpawnNpc == replay.SpawnNpc &&
+                        plan.SpawnEvidence == replay.SpawnEvidence;
                     valid &= plan.FloorNumber == floor &&
                         (floor == 99 ? plan.Length == 4 : floor == 1 ? plan.Length >= 8 : plan.Length >= 11);
                     valid &= !(floor == 99 && plan.SpawnMonster);
@@ -197,8 +203,23 @@ namespace NinetyNineEditor
             }
             valid &= themes.Count == 6;
             valid &= events.Count >= 20;
-            Debug.Log("EVACUATION_DIRECTOR_100_SEEDS=" + (valid ? "PASS" : "FAIL") +
+            valid &= deterministic;
+            HashSet<Vector2Int> navigationCells = new HashSet<Vector2Int>
+            {
+                Vector2Int.zero,
+                Vector2Int.up,
+                Vector2Int.up + Vector2Int.right
+            };
+            EvacuationNavigationGraph navigation = new EvacuationNavigationGraph(navigationCells);
+            Vector3 navigationWaypoint;
+            bool navigationValid = navigation.TryGetNextWaypoint(new Vector3(0f, 0f, 4f),
+                new Vector3(3f, 0f, 7f), out navigationWaypoint) &&
+                Vector3.Distance(navigationWaypoint, new Vector3(0f, 0f, 7f)) < 0.05f;
+            valid &= navigationValid;
+            Debug.Log("EVACUATION_DIRECTOR_1000_SEEDS=" + (valid ? "PASS" : "FAIL") +
                 " THEMES=" + themes.Count + " EVENTS=" + events.Count);
+            Debug.Log("EVACUATION_SEED_REPLAY_TEST=" + (deterministic ? "PASS" : "FAIL"));
+            Debug.Log("EVACUATION_GRID_NAVIGATION_TEST=" + (navigationValid ? "PASS" : "FAIL"));
             if (!valid)
             {
                 throw new System.InvalidOperationException("Evacuation content validation failed.");

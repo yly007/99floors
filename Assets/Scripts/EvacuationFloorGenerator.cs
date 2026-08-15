@@ -20,6 +20,8 @@ namespace NinetyNine
         private readonly List<Light> _cabinLights = new List<Light>();
         private readonly Dictionary<EvacuationAction, Renderer> _controlIndicators =
             new Dictionary<EvacuationAction, Renderer>();
+        private readonly Dictionary<EvacuationAction, Material> _controlAtlasMaterials =
+            new Dictionary<EvacuationAction, Material>();
         private NinetyNineEvacuationGame _game;
         private EvacuationAudio _audio;
         private Transform _root;
@@ -31,6 +33,7 @@ namespace NinetyNine
         private GameObject _barrier;
         private TextMesh _floorDisplay;
         private Light _flashlight;
+        private GameObject _parasiteVisual;
         private Material _black;
         private Material _metal;
         private Material _brass;
@@ -56,10 +59,13 @@ namespace NinetyNine
         private Material _amberGlow;
         private Material _cabinLampGlow;
         private Material _glass;
+        private Material _survivorClothes;
+        private Material _mimicClothes;
         private Font _worldFont;
         private float _doorSeal;
         private EvacuationMonster _monster;
         private EvacuationPrimitivePool _primitivePool;
+        private EvacuationNavigationGraph _navigationGraph;
 
         public FirstPersonController Player { get; private set; }
         public Transform Cabin => _cabin;
@@ -67,6 +73,21 @@ namespace NinetyNine
         public EvacuationMonster Monster => _monster;
         public int PooledPrimitiveCount => _primitivePool != null ? _primitivePool.AvailableCount : 0;
         public int CreatedPrimitiveCount => _primitivePool != null ? _primitivePool.TotalCreated : 0;
+        public int CurrentFloorInstanceId => _floorRoot != null ? _floorRoot.gameObject.GetInstanceID() : 0;
+        public int CurrentPickupCount
+        {
+            get
+            {
+                if (_floorRoot == null) return 0;
+                EvacuationInteractable[] values = _floorRoot.GetComponentsInChildren<EvacuationInteractable>(true);
+                int count = 0;
+                for (int i = 0; i < values.Length; i++)
+                {
+                    if (values[i].Action == EvacuationAction.Item) count++;
+                }
+                return count;
+            }
+        }
 
         public void Initialize(NinetyNineEvacuationGame game, EvacuationAudio audio)
         {
@@ -162,10 +183,12 @@ namespace NinetyNine
                     }
                 }
             }
+            int monsterBypassIndex = -1;
             if (plan.SpawnMonster)
             {
-                AddMonsterBypass(mainPath, cells, random);
+                monsterBypassIndex = AddMonsterBypass(mainPath, cells, random);
             }
+            _navigationGraph = new EvacuationNavigationGraph(cells);
 
             Vector2Int? lockerCell = plan.SpawnMonster && explorationRooms.Count > 0
                 ? explorationRooms[0]
@@ -190,6 +213,8 @@ namespace NinetyNine
                 Vector3 starterPosition = CellPosition(mainPath[Mathf.Min(1, mainPath.Count - 1)]);
                 CreatePickup(starterItem, starterPosition + new Vector3(0f, 0.34f, 0.25f));
                 CreateNpc(CellPosition(mainPath[2]), false, floorNumber - random.Next(5, 10));
+                CreateLight("StartFloorGuide", starterPosition + new Vector3(0f, 2.45f, 0f),
+                    new Color(0.95f, 0.66f, 0.38f), 3.4f, 8f, _floorRoot).shadows = LightShadows.Soft;
             }
             else if (!isExitFloor)
             {
@@ -261,8 +286,13 @@ namespace NinetyNine
                 }
             }
 
-            ApplyFloorEvent(plan, mainPath, random);
-            _floorRoot.gameObject.AddComponent<EvacuationFloorAnomaly>().Configure(plan.Event);
+            ApplyFloorEvent(plan, mainPath, random, monsterBypassIndex);
+            Vector3 landmarkPosition = explorationRooms.Count > 0
+                ? CellPosition(explorationRooms[explorationRooms.Count - 1])
+                : CellPosition(mainPath[mainPath.Count - 1]);
+            if (!isStartingFloor) CreateThemeLandmark(theme, landmarkPosition, random);
+            _floorRoot.gameObject.AddComponent<EvacuationFloorAnomaly>().Configure(plan.Event,
+                _game, Player);
 
             if (theme == EvacuationTheme.Flooded || plan.Event == FloorEventKind.RisingWater)
             {
@@ -289,6 +319,14 @@ namespace NinetyNine
             if (_floorRoot != null)
             {
                 _floorRoot.gameObject.SetActive(false);
+            }
+        }
+
+        public void ResumeFloor()
+        {
+            if (_floorRoot != null)
+            {
+                _floorRoot.gameObject.SetActive(true);
             }
         }
 
@@ -380,6 +418,19 @@ namespace NinetyNine
             renderer.sharedMaterial.SetColor("_EmissionColor", color * 3.4f);
         }
 
+        public void SetParasiteActive(bool active)
+        {
+            if (_parasiteVisual != null) _parasiteVisual.SetActive(active);
+        }
+
+        public void ReleaseDynamicObject(GameObject target)
+        {
+            if (target == null) return;
+            if (_audio != null) _audio.DetachObject(target);
+            if (_primitivePool != null) _primitivePool.ReleaseHierarchy(target.transform);
+            Destroy(target);
+        }
+
         public void RemoveMonster(EvacuationMonster monster)
         {
             if (_monster == monster)
@@ -388,7 +439,7 @@ namespace NinetyNine
             }
             if (monster != null)
             {
-                Destroy(monster.gameObject);
+                ReleaseDynamicObject(monster.gameObject);
             }
         }
 
@@ -436,6 +487,10 @@ namespace NinetyNine
             _amberGlow = MakeEmissive("Sodium Amber", new Color(1f, 0.42f, 0.055f), 3.2f);
             _cabinLampGlow = MakeEmissive("Warm Cabin Lamp", new Color(1f, 0.78f, 0.52f), 3.2f);
             _glass = MakeTransparent("Flood Water", new Color(0.025f, 0.22f, 0.25f, 0.34f));
+            _survivorClothes = MakeMaterial("Survivor Coat", new Color(0.12f, 0.23f, 0.24f),
+                0.03f, 0.16f);
+            _mimicClothes = MakeMaterial("Mimic Coat", new Color(0.08f, 0.075f, 0.09f),
+                0.03f, 0.16f);
             _worldFont = Font.CreateDynamicFontFromOSFont(new[]
             {
                 "Microsoft YaHei", "Microsoft YaHei UI", "PingFang SC", "Heiti SC", "SimHei", "Arial"
@@ -472,6 +527,7 @@ namespace NinetyNine
             CreateCabinLamp("RearCabinLamp", -1.05f);
             CreateCabinLamp("FrontCabinLamp", 1.02f);
             CreateControlConsole();
+            CreateCabinParasite();
 
             CreateDoorHeaderDisplay();
             _barrier = new GameObject("TravelBarrier");
@@ -511,6 +567,28 @@ namespace NinetyNine
                 new Vector3(2.16f, 0.9f, 0.72f), _cyanGlow);
             CreateControl("保险丝", "安装保险丝", EvacuationAction.FusePanel,
                 new Vector3(2.16f, 0.42f, 0.72f), _amberGlow);
+        }
+
+        private void CreateCabinParasite()
+        {
+            Transform root = new GameObject("ElevatorParasite").transform;
+            root.SetParent(_cabin, false);
+            root.localPosition = new Vector3(2.12f, 0.95f, -0.2f);
+            root.localRotation = Quaternion.Euler(0f, 90f, 0f);
+            Box("CableMass", Vector3.zero, new Vector3(0.48f, 0.72f, 0.08f), _black, root, false);
+            for (int i = -2; i <= 2; i++)
+            {
+                Cylinder("Tendril", new Vector3(i * 0.08f, -0.14f, -0.08f),
+                    new Vector3(0.018f, 0.3f + Mathf.Abs(i) * 0.04f, 0.018f), _redGlow,
+                    root, false, new Vector3(0f, 0f, i * 9f));
+            }
+            BoxCollider hitbox = root.gameObject.AddComponent<BoxCollider>();
+            hitbox.size = new Vector3(0.62f, 0.86f, 0.2f);
+            hitbox.isTrigger = true;
+            root.gameObject.AddComponent<EvacuationInteractable>().Configure(
+                EvacuationAction.ElevatorParasite, "扯下吸附在电池线路上的寄生物");
+            _parasiteVisual = root.gameObject;
+            _parasiteVisual.SetActive(false);
         }
 
         private void CreateDoorHeaderDisplay()
@@ -584,10 +662,14 @@ namespace NinetyNine
                 Box("Fixture", center + new Vector3(0f, ceilingHeight - 0.1f, 0f),
                     new Vector3(0.65f, 0.05f, 0.2f), theme == EvacuationTheme.RedHall ? _redGlow : _cyanGlow,
                     _floorRoot, false);
-                Light light = CreateLight("FloorLight", center + new Vector3(0f, ceilingHeight - 0.38f, 0f),
-                    lightColor, theme == EvacuationTheme.RedHall ? 2.8f : 2.2f, 5.5f, _floorRoot);
-                light.shadows = _floorLights.Count < 4 ? LightShadows.Soft : LightShadows.None;
-                _floorLights.Add(light);
+                if (_floorLights.Count < 12 && random.NextDouble() < 0.48)
+                {
+                    Light light = CreateLight("FloorLight", center +
+                        new Vector3(0f, ceilingHeight - 0.38f, 0f), lightColor,
+                        theme == EvacuationTheme.RedHall ? 2.8f : 2.2f, 5.5f, _floorRoot);
+                    light.shadows = _floorLights.Count < 3 ? LightShadows.Soft : LightShadows.None;
+                    _floorLights.Add(light);
+                }
             }
             if (allowThemeProp)
             {
@@ -683,12 +765,68 @@ namespace NinetyNine
             }
         }
 
+        private void CreateThemeLandmark(EvacuationTheme theme, Vector3 center, System.Random random)
+        {
+            float side = random.NextDouble() < 0.5 ? -1f : 1f;
+            switch (theme)
+            {
+                case EvacuationTheme.Hospital:
+                    Box("WardCurtainRail", center + new Vector3(0f, 2.25f, 0.55f),
+                        new Vector3(2.4f, 0.05f, 0.05f), _maintenance, _floorRoot, false);
+                    Box("WardScreen", center + new Vector3(side * 0.9f, 1.1f, 0.55f),
+                        new Vector3(0.06f, 1.9f, 1.45f), _hospital, _floorRoot, false);
+                    break;
+                case EvacuationTheme.Office:
+                    for (int i = -1; i <= 1; i++)
+                    {
+                        Box("ServerRack", center + new Vector3(side * 1.08f, 0.9f, i * 0.68f),
+                            new Vector3(0.48f, 1.8f, 0.54f), _maintenance, _floorRoot, true);
+                        Box("ServerStatus", center + new Vector3(side * 0.82f, 0.92f, i * 0.68f),
+                            new Vector3(0.02f, 0.65f, 0.32f), _cyanGlow, _floorRoot, false);
+                    }
+                    break;
+                case EvacuationTheme.Apartment:
+                    Box("DiningTable", center + new Vector3(0f, 0.65f, 0.45f),
+                        new Vector3(1.55f, 0.1f, 0.9f), _brass, _floorRoot, true);
+                    Box("AbandonedPlaceSetting", center + new Vector3(0.35f, 0.73f, 0.45f),
+                        new Vector3(0.28f, 0.025f, 0.28f), _hospital, _floorRoot, false);
+                    break;
+                case EvacuationTheme.Maintenance:
+                    Box("BackupGenerator", center + new Vector3(side * 0.88f, 0.7f, 0.35f),
+                        new Vector3(1.05f, 1.4f, 0.82f), _maintenance, _floorRoot, true);
+                    Cylinder("GeneratorCoil", center + new Vector3(side * 0.88f, 0.72f, -0.09f),
+                        new Vector3(0.32f, 0.2f, 0.32f), _brass, _floorRoot, false,
+                        new Vector3(90f, 0f, 0f));
+                    break;
+                case EvacuationTheme.Flooded:
+                    Cylinder("PumpHousing", center + new Vector3(side * 0.9f, 0.6f, 0.35f),
+                        new Vector3(0.48f, 0.68f, 0.48f), _maintenance, _floorRoot, true,
+                        new Vector3(0f, 0f, 90f));
+                    Cylinder("PumpPipe", center + new Vector3(side * 1.05f, 1.5f, 0.35f),
+                        new Vector3(0.12f, 0.9f, 0.12f), _brass, _floorRoot, false);
+                    break;
+                case EvacuationTheme.RedHall:
+                    Box("ImpossibleDoor", center + new Vector3(0f, 1.45f, 1.32f),
+                        new Vector3(1.35f, 2.75f, 0.18f), _black, _floorRoot, false);
+                    Sphere("DoorEye", center + new Vector3(0f, 1.62f, 1.2f),
+                        new Vector3(0.16f, 0.1f, 0.04f), _redGlow, _floorRoot, false);
+                    break;
+            }
+        }
+
         private void ConfigureHidingSpot(Transform root, string label, Vector3 hidingPoint,
             Vector3 exitPoint)
         {
-            EvacuationHidingSpot spot = root.gameObject.AddComponent<EvacuationHidingSpot>();
+            GameObject interactionRoot = new GameObject(root.name + "HidingInteraction");
+            interactionRoot.transform.SetParent(root.parent, false);
+            interactionRoot.transform.position = root.position;
+            interactionRoot.transform.rotation = root.rotation;
+            BoxCollider hitbox = interactionRoot.AddComponent<BoxCollider>();
+            hitbox.size = root.localScale + new Vector3(0.12f, 0.12f, 0.12f);
+            hitbox.isTrigger = true;
+            EvacuationHidingSpot spot = interactionRoot.AddComponent<EvacuationHidingSpot>();
             spot.Configure(hidingPoint, Quaternion.identity, exitPoint);
-            EvacuationInteractable interactable = root.gameObject.AddComponent<EvacuationInteractable>();
+            EvacuationInteractable interactable = interactionRoot.AddComponent<EvacuationInteractable>();
             interactable.Configure(EvacuationAction.Hide, label, EvacuationItemKind.PowerCell,
                 null, spot);
         }
@@ -714,12 +852,12 @@ namespace NinetyNine
             interactable.Configure(EvacuationAction.Evidence, "调查异常档案",
                 EvacuationItemKind.PowerCell, null, null,
                 floorEvent + "_" + Mathf.Abs(floorNumber % 9));
-            CreateLight("EvidenceGlow", position + Vector3.up * 0.25f, new Color(1f, 0.34f, 0.04f),
-                1.2f, 2.2f, _floorRoot).shadows = LightShadows.None;
+            CreateLight("EvidenceGlow", Vector3.up * 0.25f, new Color(1f, 0.34f, 0.04f),
+                1.2f, 2.2f, root).shadows = LightShadows.None;
         }
 
         private void ApplyFloorEvent(EvacuationFloorPlan plan, List<Vector2Int> mainPath,
-            System.Random random)
+            System.Random random, int monsterBypassIndex)
         {
             if (mainPath.Count < 3 || plan.Event == FloorEventKind.None)
             {
@@ -734,11 +872,26 @@ namespace NinetyNine
                         new Vector3(2.8f, 0.05f, 8f), _glass, _floorRoot, false);
                     break;
                 case FloorEventKind.BaitCache:
+                    CreatePickup(EvacuationItemKind.PowerCell, mid + new Vector3(0.7f, 0.42f, 0f));
+                    CreatePickup(EvacuationItemKind.Medkit, mid + new Vector3(-0.55f, 0.32f, 0.2f));
+                    Box("SecurityWarning", far + new Vector3(1.2f, 1.2f, 0.7f),
+                        new Vector3(0.12f, 2.4f, 2.1f), _surveillanceSign, _floorRoot, false);
+                    break;
                 case FloorEventKind.LockdownPickup:
                     CreatePickup(EvacuationItemKind.PowerCell, mid + new Vector3(0.7f, 0.42f, 0f));
                     CreatePickup(EvacuationItemKind.Medkit, mid + new Vector3(-0.55f, 0.32f, 0.2f));
-                    Box("SecurityShutter", far + new Vector3(1.2f, 1.2f, 0.7f),
-                        new Vector3(0.12f, 2.4f, 2.1f), _surveillanceSign, _floorRoot, false);
+                    int shutterIndex = Mathf.Clamp(monsterBypassIndex > 0
+                        ? monsterBypassIndex : mainPath.Count / 2, 1, mainPath.Count - 1);
+                    Vector3 shutterCell = CellPosition(mainPath[shutterIndex]);
+                    Vector3 beforeMid = CellPosition(mainPath[shutterIndex - 1]);
+                    Vector3 shutterPosition = (beforeMid + shutterCell) * 0.5f + Vector3.up * 4.45f;
+                    bool pathAlongZ = Mathf.Abs(shutterCell.z - beforeMid.z) >
+                        Mathf.Abs(shutterCell.x - beforeMid.x);
+                    Box("EventShutter", shutterPosition, pathAlongZ
+                        ? new Vector3(2.78f, 2.8f, 0.16f)
+                        : new Vector3(0.16f, 2.8f, 2.78f), _maintenance, _floorRoot);
+                    CreateLight("LockdownAlarm", shutterPosition + Vector3.down * 2.8f,
+                        new Color(1f, 0.025f, 0.01f), 3.2f, 7f, _floorRoot);
                     break;
                 case FloorEventKind.SurvivorCamp:
                     for (int i = -1; i <= 1; i++)
@@ -750,8 +903,10 @@ namespace NinetyNine
                         new Color(1f, 0.32f, 0.04f), 2f, 4f, _floorRoot);
                     break;
                 case FloorEventKind.PowerExchange:
-                    Box("ExchangeMachine", mid + new Vector3(0.92f, 0.8f, 0f),
-                        new Vector3(0.75f, 1.6f, 0.62f), _powerSign, _floorRoot);
+                    CreateEventInteractable("ExchangeMachine",
+                        "使用电力交换机（零件优先，也可拆手电电池）",
+                        EvacuationAction.PowerExchange, mid + new Vector3(0.92f, 0.8f, 0f),
+                        new Vector3(0.75f, 1.6f, 0.62f), _powerSign);
                     CreatePickup(EvacuationItemKind.Fuse, mid + new Vector3(-0.72f, 0.3f, 0f));
                     break;
                 case FloorEventKind.RingingPhone:
@@ -785,11 +940,13 @@ namespace NinetyNine
                     CreateEventInteractable("ExitTerminal", "验证出口并离开大楼",
                         EvacuationAction.ExitTerminal, far + new Vector3(0f, 0.82f, 0.15f),
                         new Vector3(0.72f, 1.35f, 0.42f), _maintenance);
+                    CreateLight("ExitTerminalBeacon", far + new Vector3(0f, 1.9f, 0.1f),
+                        new Color(1f, 0.28f, 0.04f), 3f, 9f, _floorRoot);
                     break;
                 case FloorEventKind.ShiftingRooms:
                 case FloorEventKind.MirroredCorridor:
                     Box("ImpossibleWall", mid + new Vector3(0f, 1.55f, 0.85f),
-                        new Vector3(2.2f, 3f, 0.08f), _glass, _floorRoot, false);
+                        new Vector3(2.2f, 3f, 0.08f), _glass, _floorRoot, true);
                     break;
             }
             if (plan.Pressure == FloorPressure.Anomaly || plan.Event == FloorEventKind.WrongFloorNumber ||
@@ -816,8 +973,11 @@ namespace NinetyNine
 
         private void CreatePickup(EvacuationItemKind kind, Vector3 position)
         {
-            Material material = kind == EvacuationItemKind.PowerCell ? _cyanGlow :
-                kind == EvacuationItemKind.Medkit ? _redGlow : _amberGlow;
+            Material material = kind == EvacuationItemKind.PowerCell ||
+                kind == EvacuationItemKind.EmergencyCell ? _maintenance :
+                kind == EvacuationItemKind.Medkit ? _redHall : _metal;
+            Material locatorMaterial = kind == EvacuationItemKind.Medkit ? _redGlow :
+                kind == EvacuationItemKind.PowerCell ? _cyanGlow : _amberGlow;
             Transform root = new GameObject(kind.ToString()).transform;
             root.SetParent(_floorRoot, false);
             root.position = position;
@@ -826,9 +986,12 @@ namespace NinetyNine
                 kind == EvacuationItemKind.EmergencyCell ? new Vector3(0.42f, 0.48f, 0.3f) :
                 new Vector3(0.32f, 0.32f, 0.32f),
                 material, root, false);
+            Box("LocatorStrip", new Vector3(0f, 0.17f, -0.205f),
+                kind == EvacuationItemKind.PowerCell ? new Vector3(0.24f, 0.025f, 0.014f) :
+                new Vector3(0.14f, 0.018f, 0.014f), locatorMaterial, root, false);
             Vector3 iconSize = kind == EvacuationItemKind.PowerCell
-                ? new Vector3(0.34f, 0.5f, 0.018f)
-                : new Vector3(0.25f, 0.25f, 0.018f);
+                ? new Vector3(0.3f, 0.56f, 0.018f)
+                : new Vector3(0.22f, 0.4f, 0.018f);
             Box("ItemDecal", new Vector3(0f, 0f, -0.19f), iconSize,
                 GetItemAtlasMaterial(kind), root, false);
             BoxCollider hitbox = root.gameObject.AddComponent<BoxCollider>();
@@ -840,11 +1003,11 @@ namespace NinetyNine
             hitbox.isTrigger = true;
             EvacuationInteractable interactable = root.gameObject.AddComponent<EvacuationInteractable>();
             interactable.Configure(EvacuationAction.Item, ItemLabel(kind), kind);
-            Light glow = CreateLight(kind + "Glow", position + Vector3.up * 0.35f,
+            Light glow = CreateLight(kind + "Glow", Vector3.up * 0.35f,
                 kind == EvacuationItemKind.Medkit ? Color.red :
                 kind == EvacuationItemKind.EmergencyCell ? new Color(1f, 0.38f, 0.04f) :
                 new Color(0.08f, 0.9f, 0.72f),
-                1.6f, 2.4f, _floorRoot);
+                0.62f, 1.55f, root);
             glow.shadows = LightShadows.None;
         }
 
@@ -852,7 +1015,7 @@ namespace NinetyNine
         {
             if (_monster != null)
             {
-                Destroy(_monster.gameObject);
+                ReleaseDynamicObject(_monster.gameObject);
             }
             CreateMonster(new Vector3(0f, 0f, 5.2f), 0f,
                 watcher ? MonsterArchetype.Watcher : MonsterArchetype.Pursuer);
@@ -913,7 +1076,10 @@ namespace NinetyNine
                 patrolRoute = new List<Vector3>(routeCells.Count);
                 for (int i = 0; i < routeCells.Count; i++) patrolRoute.Add(CellPosition(routeCells[i]));
             }
-            _monster.Initialize(_game, Player, _audio, delay, archetype, patrolRoute);
+            int randomSeed = unchecked((_game.RunSeed * 397) ^ Mathf.RoundToInt(position.x * 31f) ^
+                Mathf.RoundToInt(position.z * 101f) ^ (int)archetype * 7919);
+            _monster.Initialize(_game, Player, _audio, delay, archetype, patrolRoute,
+                _navigationGraph, randomSeed);
         }
 
         private void CreateNpc(Vector3 position, bool mimic, int destination)
@@ -921,21 +1087,29 @@ namespace NinetyNine
             GameObject root = new GameObject(mimic ? "Quiet Survivor" : "Survivor");
             root.transform.SetParent(_floorRoot, false);
             root.transform.position = position;
-            Material clothes = MakeMaterial("Survivor Coat", mimic ? new Color(0.08f, 0.075f, 0.09f) :
-                new Color(0.12f, 0.23f, 0.24f), 0.03f, 0.16f);
+            Material clothes = mimic ? _mimicClothes : _survivorClothes;
             Capsule("Body", new Vector3(0f, 0.88f, 0f), new Vector3(0.45f, 0.8f, 0.34f), clothes, root.transform, false);
             Sphere("Head", new Vector3(0f, 1.82f, 0f), new Vector3(0.34f, 0.4f, 0.32f),
                 mimic ? _black : _brass, root.transform, false);
+            Cylinder("LeftArm", new Vector3(-0.43f, 0.92f, 0f),
+                new Vector3(0.055f, 0.58f, 0.055f), clothes, root.transform, false,
+                new Vector3(0f, 0f, -5f));
+            Cylinder("RightArm", new Vector3(0.43f, 0.92f, 0f),
+                new Vector3(0.055f, 0.58f, 0.055f), clothes, root.transform, false,
+                new Vector3(0f, 0f, 5f));
+            Box("CoatHem", new Vector3(0f, 0.42f, 0.02f),
+                new Vector3(0.62f, 0.62f, 0.42f), clothes, root.transform, false);
             if (mimic)
             {
                 Sphere("WrongEye", new Vector3(0.11f, 1.87f, -0.3f), new Vector3(0.028f, 0.018f, 0.012f), _redGlow, root.transform, false);
             }
-            CapsuleCollider collider = root.AddComponent<CapsuleCollider>();
-            collider.height = 2f;
-            collider.radius = 0.38f;
-            collider.center = new Vector3(0f, 1f, 0f);
+            CharacterController controller = root.AddComponent<CharacterController>();
+            controller.height = 2f;
+            controller.radius = 0.34f;
+            controller.center = new Vector3(0f, 1f, 0f);
+            controller.stepOffset = 0.24f;
             EvacuationNpc npc = root.AddComponent<EvacuationNpc>();
-            npc.Initialize(_game, Player, mimic, destination);
+            npc.Initialize(_game, Player, mimic, destination, _navigationGraph);
             EvacuationInteractable interactable = root.AddComponent<EvacuationInteractable>();
             interactable.Configure(EvacuationAction.Npc, mimic ? "邀请沉默的幸存者" : "邀请幸存者",
                 EvacuationItemKind.PowerCell, npc);
@@ -958,59 +1132,34 @@ namespace NinetyNine
             root.SetParent(_cabin, false);
             root.localPosition = position;
             root.localRotation = Quaternion.Euler(0f, 90f, 0f);
-            Transform panel = Box("Surface", Vector3.zero, new Vector3(0.82f, 0.4f, 0.09f), _metal, root);
+            Box("Recess", new Vector3(0f, 0f, 0.025f), new Vector3(0.9f, 0.44f, 0.11f),
+                _black, root, false);
+            Transform panel = Box("Surface", Vector3.zero, new Vector3(0.82f, 0.4f, 0.075f),
+                GetControlAtlasMaterial(action), root);
             EvacuationInteractable interactable = panel.gameObject.AddComponent<EvacuationInteractable>();
             interactable.Configure(action, label);
             Transform indicator = CreateControlIndicator(action, root, glow);
             _controlIndicators[action] = indicator.GetComponent<Renderer>();
-            CreateText("Label", root, displayName, 0.0058f, new Color(0.84f, 0.89f, 0.86f),
-                new Vector3(0f, -0.105f, -0.13f)).fontStyle = FontStyle.Bold;
         }
 
         private Transform CreateControlIndicator(EvacuationAction action, Transform root, Material glow)
         {
             Material indicatorMaterial = new Material(glow);
-            if (action == EvacuationAction.Stop)
-            {
-                return Cylinder("EmergencyStop", new Vector3(0f, 0.085f, -0.09f),
-                    new Vector3(0.13f, 0.045f, 0.13f), indicatorMaterial, root, false,
-                    new Vector3(90f, 0f, 0f));
-            }
-            if (action == EvacuationAction.Door)
-            {
-                Box("DoorArrowRight", new Vector3(0.13f, 0.085f, -0.078f),
-                    new Vector3(0.13f, 0.13f, 0.035f), indicatorMaterial, root, false);
-                return Box("DoorArrowLeft", new Vector3(-0.13f, 0.085f, -0.078f),
-                    new Vector3(0.13f, 0.13f, 0.035f), indicatorMaterial, root, false);
-            }
-            if (action == EvacuationAction.BatterySlot)
-            {
-                Box("BatteryRecess", new Vector3(0f, 0.085f, -0.074f),
-                    new Vector3(0.38f, 0.12f, 0.025f), _black, root, false);
-                return Box("BatteryContact", new Vector3(0f, 0.085f, -0.092f),
-                    new Vector3(0.28f, 0.045f, 0.018f), indicatorMaterial, root, false);
-            }
-            if (action == EvacuationAction.FusePanel)
-            {
-                Transform hatch = Box("FuseHatch", new Vector3(0f, 0.085f, -0.078f),
-                    new Vector3(0.3f, 0.15f, 0.035f), indicatorMaterial, root, false);
-                Box("FuseLatch", new Vector3(0.105f, 0.085f, -0.102f),
-                    new Vector3(0.035f, 0.07f, 0.018f), _redGlow, root, false);
-                return hatch;
-            }
-            Box("DescentStem", new Vector3(0f, 0.105f, -0.08f),
-                new Vector3(0.055f, 0.12f, 0.035f), indicatorMaterial, root, false);
-            return Box("DescentArrow", new Vector3(0f, 0.045f, -0.088f),
-                new Vector3(0.22f, 0.065f, 0.04f), indicatorMaterial, root, false);
+            return Box("StateLamp", new Vector3(0.3f, -0.145f, -0.066f),
+                new Vector3(0.075f, 0.022f, 0.014f), indicatorMaterial, root, false);
         }
 
         private void ClearFloor()
         {
             _floorLights.Clear();
+            if (_monster != null && _audio != null) _audio.DetachObject(_monster.gameObject);
             _monster = null;
+            _navigationGraph = null;
             EvacuationSignals.Clear();
             if (_floorRoot != null)
             {
+                EvacuationVfx vfx = _floorRoot.GetComponent<EvacuationVfx>();
+                if (vfx != null) vfx.ReleaseSystems();
                 _primitivePool.ReleaseHierarchy(_floorRoot);
                 Destroy(_floorRoot.gameObject);
             }
@@ -1057,11 +1206,14 @@ namespace NinetyNine
             return false;
         }
 
-        private static void AddMonsterBypass(List<Vector2Int> mainPath, HashSet<Vector2Int> cells,
+        private static int AddMonsterBypass(List<Vector2Int> mainPath, HashSet<Vector2Int> cells,
             System.Random random)
         {
-            for (int i = 1; i < mainPath.Count - 1; i++)
+            int midpoint = mainPath.Count / 2;
+            for (int offset = 0; offset < mainPath.Count; offset++)
             {
+                int i = midpoint + (offset % 2 == 0 ? offset / 2 : -(offset + 1) / 2);
+                if (i < 1 || i >= mainPath.Count - 1) continue;
                 Vector2Int before = mainPath[i] - mainPath[i - 1];
                 Vector2Int after = mainPath[i + 1] - mainPath[i];
                 if (before != after)
@@ -1076,8 +1228,9 @@ namespace NinetyNine
                 cells.Add(mainPath[i - 1] + side);
                 cells.Add(mainPath[i] + side);
                 cells.Add(mainPath[i + 1] + side);
-                return;
+                return i;
             }
+            return -1;
         }
 
         private static Vector3 CellPosition(Vector2Int cell)
@@ -1195,12 +1348,28 @@ namespace NinetyNine
                 case EvacuationItemKind.FlashBattery: index = 5; break;
                 default: index = 6; break;
             }
-            material = MakeGeneratedAtlasMaterial(kind + " Icon", "Art/survival_item_atlas_v2", index);
+            material = MakeUnlitAtlasMaterial(kind + " Icon", "Art/survival_item_atlas_v2", index,
+                4, 2);
             _itemAtlasMaterials[kind] = material;
             return material;
         }
 
-        private static Material MakeGeneratedAtlasMaterial(string name, string resourcePath, int index)
+        private Material GetControlAtlasMaterial(EvacuationAction action)
+        {
+            Material material;
+            if (_controlAtlasMaterials.TryGetValue(action, out material)) return material;
+            int index = action == EvacuationAction.Descend ? 0 :
+                action == EvacuationAction.Stop ? 1 :
+                action == EvacuationAction.Door ? 2 :
+                action == EvacuationAction.BatterySlot ? 3 : 4;
+            material = MakeGeneratedAtlasMaterial(action + " Industrial Control",
+                "Art/elevator_control_atlas_v3", index, 2, 3);
+            _controlAtlasMaterials[action] = material;
+            return material;
+        }
+
+        private static Material MakeGeneratedAtlasMaterial(string name, string resourcePath, int index,
+            int columns = 4, int rows = 2)
         {
             Material material = MakeMaterial(name, Color.white, 0.08f, 0.34f);
             Texture2D texture = Resources.Load<Texture2D>(resourcePath);
@@ -1208,9 +1377,34 @@ namespace NinetyNine
             {
                 texture.wrapMode = TextureWrapMode.Clamp;
                 material.mainTexture = texture;
-                material.mainTextureScale = new Vector2(0.25f, 0.5f);
-                material.mainTextureOffset = new Vector2((index % 4) * 0.25f, index < 4 ? 0.5f : 0f);
+                float tileWidth = 1f / columns;
+                float tileHeight = 1f / rows;
+                int rowFromTop = index / columns;
+                material.mainTextureScale = new Vector2(tileWidth, tileHeight);
+                material.mainTextureOffset = new Vector2((index % columns) * tileWidth,
+                    1f - (rowFromTop + 1) * tileHeight);
             }
+            return material;
+        }
+
+        private static Material MakeUnlitAtlasMaterial(string name, string resourcePath, int index,
+            int columns, int rows)
+        {
+            Shader shader = Shader.Find("Unlit/Texture") ?? Shader.Find("Standard");
+            Material material = new Material(shader) { name = name, color = Color.white };
+            Texture2D texture = Resources.Load<Texture2D>(resourcePath);
+            if (texture != null)
+            {
+                texture.wrapMode = TextureWrapMode.Clamp;
+                material.mainTexture = texture;
+                float tileWidth = 1f / columns;
+                float tileHeight = 1f / rows;
+                int rowFromTop = index / columns;
+                material.mainTextureScale = new Vector2(tileWidth, tileHeight);
+                material.mainTextureOffset = new Vector2((index % columns) * tileWidth,
+                    1f - (rowFromTop + 1) * tileHeight);
+            }
+            material.enableInstancing = true;
             return material;
         }
 
@@ -1221,6 +1415,7 @@ namespace NinetyNine
             material.color = color;
             material.SetFloat("_Metallic", metallic);
             material.SetFloat("_Glossiness", smoothness);
+            material.enableInstancing = true;
             return material;
         }
 
@@ -1271,18 +1466,10 @@ namespace NinetyNine
                 Quaternion.Euler(rotation), material, collider);
         }
 
-        private static Light CreateLight(string name, Vector3 position, Color color, float intensity,
+        private Light CreateLight(string name, Vector3 position, Color color, float intensity,
             float range, Transform parent)
         {
-            GameObject lightObject = new GameObject(name);
-            lightObject.transform.SetParent(parent, false);
-            lightObject.transform.localPosition = position;
-            Light light = lightObject.AddComponent<Light>();
-            light.type = LightType.Point;
-            light.color = color;
-            light.intensity = intensity;
-            light.range = range;
-            return light;
+            return _primitivePool.RentLight(name, parent, position, color, intensity, range);
         }
 
         private TextMesh CreateText(string name, Transform parent, string value,

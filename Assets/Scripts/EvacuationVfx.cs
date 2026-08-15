@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace NinetyNine
@@ -5,6 +6,8 @@ namespace NinetyNine
     public sealed class EvacuationVfx : MonoBehaviour
     {
         private static Material _particleMaterial;
+        private static readonly Stack<ParticleSystem> AvailableSystems = new Stack<ParticleSystem>();
+        private static Transform _poolRoot;
 
         public void Configure(EvacuationTheme theme, FloorEventKind floorEvent, int length)
         {
@@ -28,6 +31,7 @@ namespace NinetyNine
             main.startSpeed = new ParticleSystem.MinMaxCurve(0.015f, 0.08f);
             main.startSize = new ParticleSystem.MinMaxCurve(0.012f, 0.045f);
             main.maxParticles = 180;
+            main.gravityModifier = 0f;
             main.startColor = theme == EvacuationTheme.RedHall
                 ? new Color(0.4f, 0.04f, 0.02f, 0.42f)
                 : new Color(0.48f, 0.62f, 0.58f, 0.28f);
@@ -79,14 +83,48 @@ namespace NinetyNine
 
         private ParticleSystem CreateSystem(string objectName, Vector3 localPosition)
         {
-            GameObject root = new GameObject(objectName);
+            ParticleSystem particles = null;
+            while (AvailableSystems.Count > 0 && particles == null)
+            {
+                particles = AvailableSystems.Pop();
+            }
+            GameObject root;
+            if (particles == null)
+            {
+                root = new GameObject(objectName);
+                particles = root.AddComponent<ParticleSystem>();
+            }
+            else
+            {
+                root = particles.gameObject;
+                root.name = objectName;
+                root.SetActive(true);
+                particles.Clear(true);
+            }
             root.transform.SetParent(transform, false);
             root.transform.localPosition = localPosition;
-            ParticleSystem particles = root.AddComponent<ParticleSystem>();
             ParticleSystemRenderer renderer = root.GetComponent<ParticleSystemRenderer>();
             renderer.renderMode = ParticleSystemRenderMode.Billboard;
             renderer.sharedMaterial = GetParticleMaterial();
             return particles;
+        }
+
+        public void ReleaseSystems()
+        {
+            if (_poolRoot == null)
+            {
+                _poolRoot = new GameObject("Runtime Particle Pool").transform;
+                Object.DontDestroyOnLoad(_poolRoot.gameObject);
+            }
+            ParticleSystem[] systems = GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < systems.Length; i++)
+            {
+                ParticleSystem particles = systems[i];
+                particles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                particles.transform.SetParent(_poolRoot, false);
+                particles.gameObject.SetActive(false);
+                AvailableSystems.Push(particles);
+            }
         }
 
         private static Material GetParticleMaterial()

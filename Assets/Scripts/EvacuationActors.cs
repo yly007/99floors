@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace NinetyNine
@@ -14,7 +15,9 @@ namespace NinetyNine
         Hide,
         Evidence,
         RingingPhone,
-        ExitTerminal
+        ExitTerminal,
+        PowerExchange,
+        ElevatorParasite
     }
 
     public enum EvacuationItemKind
@@ -55,7 +58,12 @@ namespace NinetyNine
     {
         private NinetyNineEvacuationGame _game;
         private FirstPersonController _player;
-        private Collider _collider;
+        private CharacterController _controller;
+        private EvacuationNavigationGraph _navigation;
+        private Transform _bodyVisual;
+        private Transform _headVisual;
+        private Vector3 _bodyBasePosition;
+        private Vector3 _headBasePosition;
         private bool _following;
         private bool _questioned;
 
@@ -69,7 +77,7 @@ namespace NinetyNine
         public string DisplayName => IsMimic ? "沉默的幸存者" : ArchetypeName(Archetype);
 
         public void Initialize(NinetyNineEvacuationGame game, FirstPersonController player,
-            bool mimic, int destinationFloor)
+            bool mimic, int destinationFloor, EvacuationNavigationGraph navigation = null)
         {
             _game = game;
             _player = player;
@@ -79,11 +87,16 @@ namespace NinetyNine
             Trust = mimic ? -1 : 1;
             Fear = 2;
             MimicTimeRemaining = 0f;
-            _collider = GetComponent<Collider>();
+            _controller = GetComponent<CharacterController>();
+            _navigation = navigation;
+            _bodyVisual = transform.Find("Body");
+            _headVisual = transform.Find("Head");
+            if (_bodyVisual != null) _bodyBasePosition = _bodyVisual.localPosition;
+            if (_headVisual != null) _headBasePosition = _headVisual.localPosition;
             CharacterController playerController = player.GetComponent<CharacterController>();
-            if (_collider != null && playerController != null)
+            if (_controller != null && playerController != null)
             {
-                Physics.IgnoreCollision(_collider, playerController, true);
+                Physics.IgnoreCollision(_controller, playerController, true);
             }
         }
 
@@ -104,7 +117,7 @@ namespace NinetyNine
             _questioned = true;
             if (firstQuestion && !IsMimic)
             {
-                Trust++;
+                Trust = Mathf.Min(5, Trust + 1);
             }
             clueId = IsMimic ? "contradiction_" + DestinationFloor :
                 "witness_" + ((int)Archetype) + "_" + Mathf.Abs(DestinationFloor % 3);
@@ -130,7 +143,7 @@ namespace NinetyNine
                 Fear++;
                 return false;
             }
-            Trust++;
+            Trust = Mathf.Min(5, Trust + 1);
             Fear = Mathf.Max(0, Fear - 1);
             return true;
         }
@@ -145,9 +158,9 @@ namespace NinetyNine
             transform.SetParent(cabin, true);
             transform.localPosition = slot;
             transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
-            if (_collider != null)
+            if (_controller != null)
             {
-                _collider.enabled = false;
+                _controller.enabled = false;
             }
         }
 
@@ -184,9 +197,34 @@ namespace NinetyNine
             float stoppingDistance = playerInside ? 0.18f : 1.65f;
             if (direction.magnitude > stoppingDistance)
             {
-                transform.position += direction.normalized * 1.85f * Time.deltaTime;
+                Vector3 waypoint;
+                if (_navigation != null && _navigation.TryGetNextWaypoint(transform.position,
+                    target, out waypoint))
+                {
+                    direction = waypoint - transform.position;
+                    direction.y = 0f;
+                }
+                Vector3 movement = direction.normalized * 1.85f;
+                if (_controller != null && _controller.enabled)
+                {
+                    _controller.SimpleMove(movement);
+                }
+                else
+                {
+                    transform.position += movement * Time.deltaTime;
+                }
                 transform.rotation = Quaternion.Slerp(transform.rotation,
                     Quaternion.LookRotation(direction.normalized), Time.deltaTime * 6f);
+                float gait = Mathf.Sin(Time.time * 8.5f) * 0.035f;
+                if (_bodyVisual != null) _bodyVisual.localPosition = _bodyBasePosition + Vector3.up * gait;
+                if (_headVisual != null) _headVisual.localPosition = _headBasePosition - Vector3.up * gait * 0.35f;
+            }
+            else
+            {
+                if (_bodyVisual != null) _bodyVisual.localPosition = Vector3.Lerp(
+                    _bodyVisual.localPosition, _bodyBasePosition, Time.deltaTime * 8f);
+                if (_headVisual != null) _headVisual.localPosition = Vector3.Lerp(
+                    _headVisual.localPosition, _headBasePosition, Time.deltaTime * 8f);
             }
             if (playerInside && transform.position.z < 2.35f && Mathf.Abs(transform.position.x) < 1.35f)
             {
@@ -205,6 +243,93 @@ namespace NinetyNine
                 case NpcArchetype.Parent: return "寻找孩子的家长";
                 default: return "沉默儿童";
             }
+        }
+    }
+
+    public sealed class EvacuationNavigationGraph
+    {
+        private static readonly Vector2Int[] Directions =
+        {
+            Vector2Int.left, Vector2Int.right, Vector2Int.up, Vector2Int.down
+        };
+
+        private readonly Dictionary<Vector2Int, Vector3> _positions =
+            new Dictionary<Vector2Int, Vector3>();
+        private readonly Queue<Vector2Int> _frontier = new Queue<Vector2Int>();
+        private readonly Dictionary<Vector2Int, Vector2Int> _previous =
+            new Dictionary<Vector2Int, Vector2Int>();
+
+        public EvacuationNavigationGraph(IEnumerable<Vector2Int> cells)
+        {
+            foreach (Vector2Int cell in cells)
+            {
+                _positions[cell] = new Vector3(cell.x * 3f, 0f, 4f + cell.y * 3f);
+            }
+        }
+
+        public bool TryGetNextWaypoint(Vector3 from, Vector3 target, out Vector3 waypoint)
+        {
+            Vector2Int start = ClosestCell(from);
+            Vector2Int goal = target.z < 2.7f && _positions.ContainsKey(Vector2Int.zero)
+                ? Vector2Int.zero : ClosestCell(target);
+            if (!_positions.ContainsKey(start) || !_positions.ContainsKey(goal))
+            {
+                waypoint = target;
+                return false;
+            }
+            if (start == goal)
+            {
+                waypoint = target;
+                return true;
+            }
+
+            _frontier.Clear();
+            _previous.Clear();
+            _frontier.Enqueue(start);
+            _previous[start] = start;
+            while (_frontier.Count > 0)
+            {
+                Vector2Int current = _frontier.Dequeue();
+                if (current == goal) break;
+                for (int i = 0; i < Directions.Length; i++)
+                {
+                    Vector2Int next = current + Directions[i];
+                    if (!_positions.ContainsKey(next) || _previous.ContainsKey(next)) continue;
+                    _previous[next] = current;
+                    _frontier.Enqueue(next);
+                }
+            }
+            if (!_previous.ContainsKey(goal))
+            {
+                waypoint = target;
+                return false;
+            }
+
+            Vector2Int step = goal;
+            while (_previous[step] != start && _previous[step] != step)
+            {
+                step = _previous[step];
+            }
+            waypoint = _positions[step];
+            waypoint.y = from.y;
+            return true;
+        }
+
+        private Vector2Int ClosestCell(Vector3 position)
+        {
+            Vector2Int rounded = new Vector2Int(Mathf.RoundToInt(position.x / 3f),
+                Mathf.RoundToInt((position.z - 4f) / 3f));
+            if (_positions.ContainsKey(rounded)) return rounded;
+            float closestDistance = float.MaxValue;
+            Vector2Int closest = rounded;
+            foreach (KeyValuePair<Vector2Int, Vector3> pair in _positions)
+            {
+                float distance = (pair.Value - position).sqrMagnitude;
+                if (distance >= closestDistance) continue;
+                closestDistance = distance;
+                closest = pair.Key;
+            }
+            return closest;
         }
     }
 }

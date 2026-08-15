@@ -20,6 +20,14 @@ namespace NinetyNine
         private FirstPersonController _player;
         private EvacuationAudio _audio;
         private CharacterController _controller;
+        private EvacuationNavigationGraph _navigation;
+        private System.Random _random;
+        private Transform _leftArm;
+        private Transform _rightArm;
+        private Transform _head;
+        private Quaternion _leftArmBaseRotation;
+        private Quaternion _rightArmBaseRotation;
+        private Vector3 _headBasePosition;
         private MonsterArchetype _archetype;
         private MonsterAwarenessState _state;
         private Vector3 _home;
@@ -41,12 +49,21 @@ namespace NinetyNine
 
         public void Initialize(NinetyNineEvacuationGame game, FirstPersonController player,
             EvacuationAudio audio, float delay, MonsterArchetype archetype,
-            IReadOnlyList<Vector3> patrolRoute = null)
+            IReadOnlyList<Vector3> patrolRoute = null, EvacuationNavigationGraph navigation = null,
+            int randomSeed = 0)
         {
             _game = game;
             _player = player;
             _audio = audio;
             _controller = GetComponent<CharacterController>();
+            _navigation = navigation;
+            _random = new System.Random(randomSeed == 0 ? 9917 : randomSeed);
+            _leftArm = transform.Find("LeftArm");
+            _rightArm = transform.Find("RightArm");
+            _head = transform.Find("Head");
+            if (_leftArm != null) _leftArmBaseRotation = _leftArm.localRotation;
+            if (_rightArm != null) _rightArmBaseRotation = _rightArm.localRotation;
+            if (_head != null) _headBasePosition = _head.localPosition;
             _archetype = archetype;
             _home = transform.position;
             _patrolTarget = _home;
@@ -115,6 +132,12 @@ namespace NinetyNine
             {
                 return;
             }
+            if (_player.IsHidden && _state == MonsterAwarenessState.Chase && distance < 1.15f &&
+                Time.time - _player.HiddenSince < 4.5f)
+            {
+                _game.MonsterFoundHidingSpot();
+                return;
+            }
 
             switch (_state)
             {
@@ -170,7 +193,7 @@ namespace NinetyNine
                 _game.MonsterEnteredElevator();
                 return;
             }
-            if (distance < 1.25f && Time.time >= _nextAttackTime)
+            if (!_player.IsHidden && distance < 1.25f && Time.time >= _nextAttackTime)
             {
                 _nextAttackTime = Time.time + 4f;
                 _pauseUntil = Time.time + 2.6f;
@@ -195,9 +218,9 @@ namespace NinetyNine
             }
             if (Time.time >= _nextPatrolChange || Vector3.Distance(transform.position, _patrolTarget) < 0.7f)
             {
-                Vector2 offset = Random.insideUnitCircle * 4f;
+                Vector2 offset = RandomInsideCircle() * 4f;
                 _patrolTarget = _home + new Vector3(offset.x, 0f, offset.y);
-                _nextPatrolChange = Time.time + Random.Range(2f, 5f);
+                _nextPatrolChange = Time.time + RandomRange(2f, 5f);
             }
             MoveTowards(_patrolTarget, _archetype == MonsterArchetype.CeilingChild ? 0.8f : 1.05f);
         }
@@ -211,7 +234,7 @@ namespace NinetyNine
             }
             if (Vector3.Distance(transform.position, _lastKnownPosition) < 0.8f)
             {
-                Vector2 offset = Random.insideUnitCircle * 2.6f;
+                Vector2 offset = RandomInsideCircle() * 2.6f;
                 _lastKnownPosition = transform.position + new Vector3(offset.x, 0f, offset.y);
             }
             MoveTowards(_lastKnownPosition, 1.25f);
@@ -219,6 +242,12 @@ namespace NinetyNine
 
         private void MoveTowards(Vector3 target, float speed)
         {
+            Vector3 waypoint;
+            if (_navigation != null && _navigation.TryGetNextWaypoint(transform.position, target,
+                out waypoint))
+            {
+                target = waypoint;
+            }
             Vector3 direction = target - transform.position;
             direction.y = 0f;
             if (direction.sqrMagnitude < 0.03f)
@@ -237,6 +266,18 @@ namespace NinetyNine
             transform.rotation = Quaternion.Slerp(transform.rotation,
                 Quaternion.LookRotation(direction), Time.deltaTime * 7f);
             _controller.SimpleMove(direction * speed);
+        }
+
+        private float RandomRange(float min, float max)
+        {
+            return Mathf.Lerp(min, max, (float)_random.NextDouble());
+        }
+
+        private Vector2 RandomInsideCircle()
+        {
+            float angle = (float)_random.NextDouble() * Mathf.PI * 2f;
+            float radius = Mathf.Sqrt((float)_random.NextDouble());
+            return new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
         }
 
         private bool CanSeePlayer(float distance)
@@ -336,6 +377,25 @@ namespace NinetyNine
                 _pauseUntil = Time.time + 0.72f;
                 _audio.PlayThreatCue(transform.position);
                 _game.ShowTransientMessage("它发现了你。甩掉视线，别发出声音。", 1.8f);
+            }
+        }
+
+        private void LateUpdate()
+        {
+            float pace = _state == MonsterAwarenessState.Chase ? 11f :
+                _state == MonsterAwarenessState.Patrol ? 4.5f : 2.2f;
+            float swing = Mathf.Sin(Time.time * pace) *
+                (_state == MonsterAwarenessState.Chase ? 34f : 12f);
+            if (_leftArm != null)
+                _leftArm.localRotation = _leftArmBaseRotation * Quaternion.Euler(swing, 0f, 0f);
+            if (_rightArm != null)
+                _rightArm.localRotation = _rightArmBaseRotation * Quaternion.Euler(-swing, 0f, 0f);
+            if (_head != null)
+            {
+                float twitch = _archetype == MonsterArchetype.Watcher
+                    ? Mathf.PerlinNoise(Time.time * 2.6f, 0.2f) * 0.055f :
+                    Mathf.Sin(Time.time * pace * 0.5f) * 0.025f;
+                _head.localPosition = _headBasePosition + Vector3.up * twitch;
             }
         }
     }

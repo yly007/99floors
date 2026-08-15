@@ -12,6 +12,7 @@ namespace NinetyNine
     {
         private readonly Dictionary<PrimitiveType, Stack<GameObject>> _available =
             new Dictionary<PrimitiveType, Stack<GameObject>>();
+        private readonly Stack<Light> _availableLights = new Stack<Light>();
         private readonly Transform _poolRoot;
 
         public int TotalCreated { get; private set; }
@@ -60,9 +61,46 @@ namespace NinetyNine
             return result.transform;
         }
 
+        public Light RentLight(string objectName, Transform parent, Vector3 position, Color color,
+            float intensity, float range)
+        {
+            Light light = null;
+            while (_availableLights.Count > 0 && light == null)
+            {
+                light = _availableLights.Pop();
+            }
+            if (light == null)
+            {
+                GameObject lightObject = new GameObject(objectName);
+                light = lightObject.AddComponent<Light>();
+            }
+            light.gameObject.name = objectName;
+            light.transform.SetParent(parent, false);
+            light.transform.localPosition = position;
+            light.transform.localRotation = Quaternion.identity;
+            light.type = LightType.Point;
+            light.color = color;
+            light.intensity = intensity;
+            light.range = range;
+            light.shadows = LightShadows.None;
+            light.enabled = true;
+            light.gameObject.SetActive(true);
+            return light;
+        }
+
         public void ReleaseHierarchy(Transform hierarchy)
         {
             if (hierarchy == null) return;
+            Light[] lights = hierarchy.GetComponentsInChildren<Light>(true);
+            for (int i = 0; i < lights.Length; i++)
+            {
+                Light light = lights[i];
+                if (light == null) continue;
+                light.enabled = false;
+                light.gameObject.SetActive(false);
+                light.transform.SetParent(_poolRoot, false);
+                _availableLights.Push(light);
+            }
             EvacuationPooledPrimitive[] primitives =
                 hierarchy.GetComponentsInChildren<EvacuationPooledPrimitive>(true);
             for (int i = 0; i < primitives.Length; i++)

@@ -7,6 +7,7 @@ namespace NinetyNine
     {
         private const float StandingHeight = 1.72f;
         private const float CrouchingHeight = 1.08f;
+        private readonly Collider[] _headroomHits = new Collider[12];
 
         private CharacterController _controller;
         private Camera _camera;
@@ -37,6 +38,7 @@ namespace NinetyNine
         public bool IsSprinting { get; private set; }
         public bool IsCrouching { get; private set; }
         public bool IsHidden => _hidden;
+        public float HiddenSince { get; private set; }
         public bool IsInsideElevator => transform.position.z < 1.55f && Mathf.Abs(transform.position.x) < 2.05f;
 
         public void Initialize(Camera playerCamera)
@@ -69,6 +71,7 @@ namespace NinetyNine
             _elevatorImpulse = 0f;
             _cursorReleased = false;
             _hidden = false;
+            HiddenSince = 0f;
             _crouchToggled = false;
             IsCrouching = false;
             _controller.height = StandingHeight;
@@ -116,7 +119,10 @@ namespace NinetyNine
             if (Input.GetKeyDown(KeyCode.C) || Input.GetKeyDown(KeyCode.LeftControl) ||
                 Input.GetKeyDown(KeyCode.RightControl))
             {
-                _crouchToggled = !_crouchToggled;
+                if (!_crouchToggled || CanStandUp())
+                {
+                    _crouchToggled = !_crouchToggled;
+                }
             }
             IsCrouching = _crouchToggled;
             UpdateCrouchShape();
@@ -186,6 +192,24 @@ namespace NinetyNine
             _controller.center = new Vector3(0f, _controller.height * 0.5f + 0.02f, 0f);
         }
 
+        private bool CanStandUp()
+        {
+            float radius = Mathf.Max(0.05f, _controller.radius * 0.92f);
+            Vector3 bottom = transform.position + Vector3.up * radius;
+            Vector3 top = transform.position + Vector3.up * (StandingHeight - radius);
+            int count = Physics.OverlapCapsuleNonAlloc(bottom, top, radius, _headroomHits,
+                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < count; i++)
+            {
+                Collider hit = _headroomHits[i];
+                if (hit != null && hit != _controller && !hit.transform.IsChildOf(transform))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         private void EmitMovementNoise()
         {
             if (MovementAmount > 0.15f && Time.time >= _nextFootstepNoise)
@@ -232,6 +256,7 @@ namespace NinetyNine
             _controller.enabled = true;
             _controller.detectCollisions = false;
             _hidden = true;
+            HiddenSince = Time.time;
             IsSprinting = false;
             MovementAmount = 0f;
         }
@@ -274,6 +299,18 @@ namespace NinetyNine
             Quaternion before = transform.rotation;
             for (int i = 0; i < 16; i++) ApplyLook(90f, 0f);
             return Quaternion.Angle(before, transform.rotation) < 0.01f;
+        }
+
+        public bool VerifyBlockedStandUp()
+        {
+            GameObject blocker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            blocker.name = "CrouchHeadroomTest";
+            blocker.transform.position = transform.position + Vector3.up * 1.48f;
+            blocker.transform.localScale = new Vector3(0.9f, 0.16f, 0.9f);
+            Physics.SyncTransforms();
+            bool blocked = !CanStandUp();
+            DestroyImmediate(blocker);
+            return blocked;
         }
 #endif
 

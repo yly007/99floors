@@ -10,6 +10,9 @@ namespace NinetyNine
             new Dictionary<GameObject, AudioSource>();
         private readonly Dictionary<GameObject, float> _monsterBasePitch =
             new Dictionary<GameObject, float>();
+        private readonly Dictionary<GameObject, AudioLowPassFilter> _monsterFilters =
+            new Dictionary<GameObject, AudioLowPassFilter>();
+        private readonly List<AudioSource> _spatialOneShots = new List<AudioSource>();
         private FirstPersonController _player;
         private AudioSource _ambience;
         private AudioSource _machinery;
@@ -21,6 +24,8 @@ namespace NinetyNine
         private AudioClip _breathClip;
         private AudioClip _monsterClip;
         private AudioClip _stepClip;
+        private AudioClip _metalStepClip;
+        private AudioClip _wetStepClip;
         private AudioClip _doorClip;
         private AudioClip _brakeClip;
         private AudioClip _railClip;
@@ -38,6 +43,11 @@ namespace NinetyNine
         private float _nextRailTime;
         private bool _travelling;
         private float _nextDistantKnock;
+        private float _doorSeal;
+        private int _spatialSourceIndex;
+        private int _surfaceIndex;
+        private System.Random _random = new System.Random(9941);
+        private AudioLowPassFilter _ambienceFilter;
 
         public void Initialize(FirstPersonController player)
         {
@@ -47,6 +57,8 @@ namespace NinetyNine
             _breathClip = CreateBreathing();
             _monsterClip = CreateMonsterBreath();
             _stepClip = CreateNoiseImpact("Heavy Footstep", 0.19f, 96f, 0.72f, 1001);
+            _metalStepClip = CreateNoiseImpact("Metal Footstep", 0.14f, 162f, 0.6f, 1811);
+            _wetStepClip = CreateNoiseImpact("Wet Footstep", 0.22f, 58f, 0.56f, 2711);
             _doorClip = CreateMetalSweep();
             _brakeClip = CreateToneSweep("Mechanical Brake", 175f, 48f, 0.75f, 0.62f);
             _railClip = CreateNoiseImpact("Rail Joint", 0.16f, 86f, 0.38f, 1207);
@@ -60,6 +72,7 @@ namespace NinetyNine
             _distantKnockClip = CreateNoiseImpact("Distant Pipe Knock", 0.34f, 74f, 0.52f, 8127);
 
             _ambience = CreateSource("Floor Ambience", false, true, 0.34f);
+            _ambienceFilter = _ambience.gameObject.AddComponent<AudioLowPassFilter>();
             _ambience.clip = _ambientClip;
             _ambience.Play();
             _machinery = CreateSource("Elevator Machinery", false, true, 0f);
@@ -73,7 +86,19 @@ namespace NinetyNine
             _doorSource.transform.position = new Vector3(0f, 1.45f, 2.15f);
             _doorSource.minDistance = 1f;
             _doorSource.maxDistance = 12f;
+            for (int i = 0; i < 4; i++)
+            {
+                AudioSource spatialSource = CreateSource("Spatial One Shot " + (i + 1), true, false, 1f);
+                spatialSource.minDistance = 1f;
+                spatialSource.maxDistance = 24f;
+                _spatialOneShots.Add(spatialSource);
+            }
             _nextDistantKnock = Time.time + 8f;
+        }
+
+        public void SetRunSeed(int runSeed)
+        {
+            _random = new System.Random(unchecked(runSeed * 486187739) ^ 9941);
         }
 
         public void SetTravelling(bool travelling)
@@ -91,11 +116,29 @@ namespace NinetyNine
         {
             _mood = Mathf.Clamp01(mood / 5f);
             _ambience.pitch = Mathf.Lerp(0.78f, 1.16f, Mathf.Repeat(mood * 0.37f, 1f));
+            _surfaceIndex = mood == (int)EvacuationTheme.Maintenance ? 1 :
+                mood == (int)EvacuationTheme.Flooded ? 2 : 0;
+        }
+
+        public void SetDoorSeal(float seal)
+        {
+            _doorSeal = Mathf.Clamp01(seal);
+            if (_ambienceFilter != null)
+            {
+                _ambienceFilter.cutoffFrequency = Mathf.Lerp(9000f, 1450f, _doorSeal);
+            }
+            foreach (KeyValuePair<GameObject, AudioLowPassFilter> pair in _monsterFilters)
+            {
+                if (pair.Value != null)
+                {
+                    pair.Value.cutoffFrequency = Mathf.Lerp(15000f, 780f, _doorSeal);
+                }
+            }
         }
 
         public void PlayDoor()
         {
-            _doorSource.pitch = UnityEngine.Random.Range(0.96f, 1.03f);
+            _doorSource.pitch = RandomRange(0.96f, 1.03f);
             _doorSource.PlayOneShot(_doorClip, 0.88f);
         }
 
@@ -133,7 +176,7 @@ namespace NinetyNine
 
         public void PlayThreatCue(Vector3 position)
         {
-            AudioSource.PlayClipAtPoint(_threatClip, position, 0.95f);
+            PlaySpatial(_threatClip, position, 0.95f, RandomRange(0.96f, 1.02f));
         }
 
         public void AttachMonsterSource(GameObject monster, MonsterArchetype archetype)
@@ -153,6 +196,18 @@ namespace NinetyNine
             source.Play();
             _monsterSources[monster] = source;
             _monsterBasePitch[monster] = basePitch;
+            AudioLowPassFilter filter = monster.AddComponent<AudioLowPassFilter>();
+            filter.cutoffFrequency = Mathf.Lerp(15000f, 780f, _doorSeal);
+            _monsterFilters[monster] = filter;
+        }
+
+        public void DetachObject(GameObject target)
+        {
+            AudioSource source;
+            if (_monsterSources.TryGetValue(target, out source) && source != null) source.Stop();
+            _monsterSources.Remove(target);
+            _monsterBasePitch.Remove(target);
+            _monsterFilters.Remove(target);
         }
 
         public void AttachPhoneSource(GameObject phone)
@@ -194,8 +249,8 @@ namespace NinetyNine
 
             if (_travelling && Time.time >= _nextRailTime)
             {
-                _nextRailTime = Time.time + UnityEngine.Random.Range(0.82f, 1.28f);
-                _oneShot.pitch = UnityEngine.Random.Range(0.86f, 1.06f);
+                _nextRailTime = Time.time + RandomRange(0.82f, 1.28f);
+                _oneShot.pitch = RandomRange(0.86f, 1.06f);
                 _oneShot.PlayOneShot(_railClip, 0.42f);
             }
 
@@ -203,17 +258,36 @@ namespace NinetyNine
             {
                 float pace = _player.IsSprinting ? 0.29f : 0.48f;
                 _nextStepTime = Time.time + pace;
-                _oneShot.pitch = UnityEngine.Random.Range(0.88f, 1.08f);
-                _oneShot.PlayOneShot(_stepClip, _player.IsSprinting ? 0.7f : 0.4f);
+                _oneShot.pitch = RandomRange(0.88f, 1.08f);
+                AudioClip step = _surfaceIndex == 1 ? _metalStepClip :
+                    _surfaceIndex == 2 ? _wetStepClip : _stepClip;
+                _oneShot.PlayOneShot(step, _player.IsSprinting ? 0.7f : 0.4f);
             }
             if (!_travelling && Time.time >= _nextDistantKnock)
             {
-                _nextDistantKnock = Time.time + UnityEngine.Random.Range(9f, 19f);
-                Vector2 offset = UnityEngine.Random.insideUnitCircle.normalized *
-                    UnityEngine.Random.Range(7f, 13f);
-                AudioSource.PlayClipAtPoint(_distantKnockClip,
-                    _player.transform.position + new Vector3(offset.x, 1f, offset.y), 0.42f);
+                _nextDistantKnock = Time.time + RandomRange(9f, 19f);
+                float angle = RandomRange(0f, Mathf.PI * 2f);
+                float radius = RandomRange(7f, 13f);
+                Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+                PlaySpatial(_distantKnockClip,
+                    _player.transform.position + new Vector3(offset.x, 1f, offset.y), 0.42f,
+                    RandomRange(0.9f, 1.06f));
             }
+        }
+
+        private void PlaySpatial(AudioClip clip, Vector3 position, float volume, float pitch)
+        {
+            if (clip == null || _spatialOneShots.Count == 0) return;
+            AudioSource source = _spatialOneShots[_spatialSourceIndex++ % _spatialOneShots.Count];
+            source.Stop();
+            source.transform.position = position;
+            source.pitch = pitch;
+            source.PlayOneShot(clip, volume);
+        }
+
+        private float RandomRange(float min, float max)
+        {
+            return Mathf.Lerp(min, max, (float)_random.NextDouble());
         }
 
         private AudioSource CreateSource(string sourceName, bool spatial, bool loop, float volume)
