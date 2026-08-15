@@ -32,6 +32,7 @@ namespace NinetyNine
 
         private readonly Queue<SubtitleLine> _subtitleQueue = new Queue<SubtitleLine>();
         private Texture2D _storyAtlas;
+        private Texture2D _titleHero;
         private Texture2D _panelSkin;
         private Texture2D _buttonSkin;
         private Font _font;
@@ -59,10 +60,11 @@ namespace NinetyNine
 
         public bool PrologueActive => _prologueActive;
 
-        public void Initialize(Texture2D storyAtlas, Texture2D panelSkin, Texture2D buttonSkin,
+        public void Initialize(Texture2D storyAtlas, Texture2D titleHero, Texture2D panelSkin, Texture2D buttonSkin,
             Font font, Action beginAction, Action settingsAction, Action quitAction)
         {
             _storyAtlas = storyAtlas;
+            _titleHero = titleHero;
             _panelSkin = panelSkin;
             _buttonSkin = buttonSkin;
             _font = font;
@@ -72,13 +74,13 @@ namespace NinetyNine
             _beats = new[]
             {
                 new PrologueBeat(0, "23:47",
-                    "第 99 版方案终于提交了。\n办公室只剩我一个人。", 3.4f),
+                    "第 99 版方案终于提交。\n九十九层的办公室，只剩我一个人。", 4.1f),
                 new PrologueBeat(1, "消防楼梯",
-                    "每向下一层，门牌都会重新变回 99。\n手机没有信号，窗外也看不到地面。", 4.1f),
-                new PrologueBeat(2, "距离封锁 30 分钟",
-                    "广播说大楼将在午夜执行“封锁”。\n唯一仍有反应的，是一部不在建筑图纸上的电梯。", 4.4f),
+                    "每往下一层，门牌都会重新跳回 99。\n手机没有信号，窗外也没有地面。", 4.8f),
+                new PrologueBeat(2, "封锁倒计时 20:00",
+                    "广播说二十分钟后，大楼会执行“封锁”。\n唯一还在响应的，是一部不在建筑图纸上的电梯。", 5.1f),
                 new PrologueBeat(3, "最后一部电梯",
-                    "它的电量到不了一楼。\n我只能在陌生楼层寻找电池，同时弄清这栋楼为什么不肯放我离开。", 4.7f)
+                    "它的电量撑不到一楼。\n我得在陌生楼层找电池，也得弄清这栋楼为什么不肯放我离开。", 5.4f)
             };
         }
 
@@ -227,9 +229,10 @@ namespace NinetyNine
         private void DrawTitle(float scale)
         {
             float zoom = 1.035f + Mathf.Sin(Time.unscaledTime * 0.12f) * 0.008f;
-            DrawAtlasCell(2, ZoomedScreenRect(zoom), Color.white);
+            if (_titleHero != null) GUI.DrawTexture(ZoomedScreenRect(zoom), _titleHero, ScaleMode.ScaleAndCrop);
+            else DrawAtlasCell(2, ZoomedScreenRect(zoom), Color.white);
             DrawTint(new Rect(0f, 0f, Screen.width, Screen.height),
-                new Color(0.002f, 0.006f, 0.007f, 0.48f));
+                new Color(0.002f, 0.006f, 0.007f, 0.3f));
             DrawPanelPlate(new Rect(Screen.width * 0.046f, Screen.height * 0.11f,
                 Screen.width * 0.44f, Screen.height * 0.78f),
                 new Color(0.58f, 0.67f, 0.62f, 0.88f));

@@ -26,15 +26,11 @@ namespace NinetyNine
             new Vector2Int(1920, 1080),
             new Vector2Int(2560, 1440)
         };
-        private static readonly string[] QualityLabels =
-        {
-            "极低", "低", "中", "高", "很高", "极致"
-        };
-        private const float MaxPower = 26f;
+        private const float MaxPower = 30f;
         private const float StartCost = 4f;
         private const float TravelCostPerFloor = 0.9f;
         private const float IdleDrain = 0.04f;
-        private const float RunDuration = 1800f;
+        private const float RunDuration = 1200f;
         private const float DoorCloseDuration = 3.4f;
         private const float DoorOpenDuration = 2.8f;
         private const float MaxDescentSpeed = 0.55f;
@@ -45,8 +41,8 @@ namespace NinetyNine
         private const float InteractionDistance = 3f;
         private const float LowPowerWarning = 8f;
         private const float CriticalPowerWarning = 4f;
-        private const float LowTimeWarning = 180f;
-        private const float CriticalTimeWarning = 60f;
+        private const float LowTimeWarning = 120f;
+        private const float CriticalTimeWarning = 45f;
         private const string ControlsWithFlashlight =
             "[WASD] 移动   [SHIFT] 冲刺   [CTRL] 切换蹲伏   [F] 手电筒";
         private const string ControlsWithoutFlashlight =
@@ -128,14 +124,13 @@ namespace NinetyNine
         private bool _powerNoticePositive;
         private System.Random _gameplayRandom;
         private int _resolutionIndex = 2;
-        private int _qualityIndex = 3;
         private string _dialogueText = string.Empty;
         private string _endingTitle = string.Empty;
         private string _endingBody = string.Empty;
         private string _powerNoticeText = string.Empty;
         private string _cachedHudFloorText = "99";
-        private string _cachedHudPowerText = "19 / 26";
-        private string _cachedHudTimeText = "30:00";
+        private string _cachedHudPowerText = "16 / 30";
+        private string _cachedHudTimeText = "20:00";
         private float _floorMovementPenalty = 1f;
 
         public int RunSeed { get; private set; }
@@ -169,6 +164,7 @@ namespace NinetyNine
             _player = _world.Player;
             _narrative = gameObject.AddComponent<EvacuationNarrativeUI>();
             _narrative.Initialize(Resources.Load<Texture2D>("Art/opening_story_atlas_v1"),
+                Resources.Load<Texture2D>("Art/title_elevator_hero_v1"),
                 _uiPanelSkin, _uiButtonSkin, _font, StartPrologue, OpenTitleSettings, ExitFromTitle);
             BuildResolutionList();
             LoadPlayerSettings();
@@ -397,6 +393,12 @@ namespace NinetyNine
                 storyProgression.Records.Count == 5;
             Debug.Log("EVACUATION_STORY_ACT_TWO_TEST=" + (storyActTwoPassed ? "PASS" : "FAIL"));
             Debug.Log("EVACUATION_STORY_ACT_THREE_TEST=" + (storyActThreePassed ? "PASS" : "FAIL"));
+            bool launchTuningPassed = Mathf.Approximately(MaxPower, 30f) &&
+                Mathf.Approximately(RunDuration, 1200f) && _power <= 16f && _power > 15.8f;
+            bool highestQualityPassed = QualitySettings.names.Length == 0 ||
+                QualitySettings.GetQualityLevel() == QualitySettings.names.Length - 1;
+            Debug.Log("EVACUATION_LAUNCH_TUNING_TEST=" + (launchTuningPassed ? "PASS" : "FAIL"));
+            Debug.Log("EVACUATION_HIGHEST_QUALITY_TEST=" + (highestQualityPassed ? "PASS" : "FAIL"));
             Debug.Log("EVACUATION_FOOTSTEP_GATE_TEST=" + (_audio.VerifyFootstepGate() ? "PASS" : "FAIL"));
             ChangePower(_power - 4f, "启动测试", false);
             bool discretePowerNoticePassed = _powerNoticeText.Contains("启动测试  -4") &&
@@ -820,9 +822,10 @@ namespace NinetyNine
             _player.LookSensitivity = PlayerPrefs.GetFloat("Evacuation.LookSensitivity", 2.6f);
             _masterVolume = PlayerPrefs.GetFloat("Evacuation.MasterVolume", 0.9f);
             _brightness = PlayerPrefs.GetFloat("Evacuation.Brightness", 1f);
-            _qualityIndex = Mathf.Clamp(PlayerPrefs.GetInt("Evacuation.Quality", 3), 0,
-                Mathf.Max(0, QualitySettings.names.Length - 1));
-            QualitySettings.SetQualityLevel(_qualityIndex, true);
+            if (QualitySettings.names.Length > 0)
+            {
+                QualitySettings.SetQualityLevel(QualitySettings.names.Length - 1, true);
+            }
             int savedWidth = PlayerPrefs.GetInt("Evacuation.ResolutionWidth", 1920);
             int savedHeight = PlayerPrefs.GetInt("Evacuation.ResolutionHeight", 1080);
             _resolutionIndex = _supportedResolutions.FindIndex(value =>
@@ -852,7 +855,6 @@ namespace NinetyNine
             PlayerPrefs.SetInt("Evacuation.ResolutionWidth", resolution.x);
             PlayerPrefs.SetInt("Evacuation.ResolutionHeight", resolution.y);
             PlayerPrefs.SetInt("Evacuation.Fullscreen", _fullscreen ? 1 : 0);
-            PlayerPrefs.SetInt("Evacuation.Quality", _qualityIndex);
             PlayerPrefs.SetInt("Evacuation.LauncherConfigured", 1);
             PlayerPrefs.Save();
         }
@@ -931,7 +933,7 @@ namespace NinetyNine
             _currentFloor = 99;
             _floorFloat = 99f;
             _departureFloor = 99;
-            _power = 19f;
+            _power = 16f;
             _lastPowerNoticeBucket = Mathf.CeilToInt(_power);
             _powerNoticeUntil = 0f;
             _powerNoticeText = string.Empty;
@@ -984,8 +986,8 @@ namespace NinetyNine
             _objectiveRevealUntil = Time.unscaledTime + 8f;
             _controlsHintUntil = Time.unscaledTime + 12f;
             _narrative.ClearGameplayNarrative();
-            _narrative.QueueThought("……又是 99 层。楼梯根本出不去。", 2.8f);
-            _narrative.QueueThought("电量只有 19 格，绝对撑不到一楼。", 3f);
+            _narrative.QueueThought("……又是 99 层。楼梯根本出不去。", 3.3f);
+            _narrative.QueueThought("电量只有 16 格，绝对撑不到一楼。", 3.5f);
             _narrative.QueueThought("外面的楼层也许有应急电池。我得先找一块。", 3.4f);
         }
 
@@ -2413,7 +2415,7 @@ namespace NinetyNine
         {
             DrawTint(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0f, 0f, 0f, 0.76f));
             Rect rect = new Rect(Screen.width * 0.5f - 285f * scale,
-                Screen.height * 0.5f - 278f * scale, 570f * scale, 556f * scale);
+                Screen.height * 0.5f - 250f * scale, 570f * scale, 500f * scale);
             DrawPanel(rect, new Color(1f, 0.48f, 0.1f));
             GUI.Label(new Rect(rect.x + 30f * scale, rect.y + 20f * scale,
                 rect.width - 60f * scale, 42f * scale), paused ? "游戏已暂停" : "启动设置", _headingStyle);
@@ -2436,24 +2438,6 @@ namespace NinetyNine
                 width, 20f * scale), _brightness, 0.72f, 1.35f);
             AnalogPostEffect.DisplayBrightness = _brightness;
             y += 58f * scale;
-
-            GUI.Label(new Rect(labelX, y, 170f * scale, 30f * scale), "画面质量", _bodyStyle);
-            if (GUI.Button(new Rect(valueX, y, 48f * scale, 36f * scale), "<"))
-            {
-                _qualityIndex = (_qualityIndex - 1 + QualitySettings.names.Length) %
-                    QualitySettings.names.Length;
-                QualitySettings.SetQualityLevel(_qualityIndex, true);
-            }
-            string qualityLabel = _qualityIndex < QualityLabels.Length
-                ? QualityLabels[_qualityIndex] : QualitySettings.names[_qualityIndex];
-            GUI.Label(new Rect(valueX + 58f * scale, y, 145f * scale, 36f * scale),
-                qualityLabel, _centerStyle);
-            if (GUI.Button(new Rect(valueX + 210f * scale, y, 48f * scale, 36f * scale), ">"))
-            {
-                _qualityIndex = (_qualityIndex + 1) % QualitySettings.names.Length;
-                QualitySettings.SetQualityLevel(_qualityIndex, true);
-            }
-            y += 56f * scale;
 
             Vector2Int resolution = _supportedResolutions[_resolutionIndex];
             if (GUI.Button(new Rect(labelX, y, 48f * scale, 38f * scale), "<"))
