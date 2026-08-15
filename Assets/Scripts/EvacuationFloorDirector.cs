@@ -29,7 +29,7 @@ namespace NinetyNine
                 Event = exit ? FloorEventKind.FalseLobby : floorEvent,
                 Pressure = pressure,
                 Monster = monster,
-                Length = start ? 4 : exit ? 6 : random.Next(8, 14),
+                Length = start ? 4 : exit ? 8 : random.Next(11, 17),
                 Blackout = !start && !exit && (floorEvent == FloorEventKind.Blackout ||
                     floorEvent == FloorEventKind.SequentialBlackout || random.NextDouble() < 0.14),
                 Distorted = !start && (pressure == FloorPressure.Anomaly ||

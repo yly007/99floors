@@ -22,7 +22,7 @@ namespace NinetyNine
         private const float StartCost = 4f;
         private const float TravelCostPerFloor = 0.9f;
         private const float IdleDrain = 0.04f;
-        private const float RunDuration = 660f;
+        private const float RunDuration = 1800f;
         private const float DoorCloseDuration = 3.4f;
         private const float DoorOpenDuration = 2.8f;
         private const float MaxDescentSpeed = 0.55f;
@@ -245,6 +245,7 @@ namespace NinetyNine
             Debug.Log("EVACUATION_POINT_BLANK_INTERACTION_TEST=" +
                 (pointBlankInteractionPassed ? "PASS" : "FAIL"));
             Debug.Log("EVACUATION_YAW_720_TEST=" + (_player.VerifyUnclampedYaw() ? "PASS" : "FAIL"));
+            Debug.Log("EVACUATION_CROUCH_TOGGLE_TEST=" + (_player.VerifyCrouchToggle() ? "PASS" : "FAIL"));
             float doorPowerBefore = _power;
             ToggleDoors();
             yield return new WaitForSeconds(0.45f);
@@ -785,7 +786,6 @@ namespace NinetyNine
                     }
                     _carryingCell = true;
                     ShowTransientMessage("电池很重。冲刺消耗增加。", 1.5f);
-                    if (_world.Monster != null) _world.Monster.TriggerChase();
                     break;
                 case EvacuationItemKind.Medkit:
                     _health = Mathf.Min(100f, _health + 38f);
@@ -1307,7 +1307,7 @@ namespace NinetyNine
                 "电量无法直达一楼。下降、抢停、进入未知楼层寻找电池；遇到怪物只能逃回电梯，在它越过门缝前关门。大多数撤离都会失败。", _bodyStyle);
             GUI.Label(new Rect(Screen.width * 0.065f, Screen.height * 0.76f,
                 Screen.width * 0.8f, 36f * scale),
-                "WASD 移动 · SHIFT 冲刺 · C/CTRL 蹲伏 · E 交互 · F 手电筒 · 鼠标无限观察", _smallStyle);
+                "WASD 移动 · SHIFT 冲刺 · C/CTRL 切换蹲伏 · E 交互 · F 手电筒 · 鼠标无限观察", _smallStyle);
             GUI.Label(new Rect(Screen.width * 0.065f, Screen.height * 0.84f,
                 Screen.width * 0.45f, 42f * scale), "按 ENTER 开始撤离", _bodyStyle);
         }

@@ -112,7 +112,7 @@ namespace NinetyNine
                     break;
                 case MonsterAwarenessState.Suspicious:
                     MoveTowards(_lastKnownPosition, 1.45f);
-                    if (Time.time >= _stateUntil) SetState(MonsterAwarenessState.Search, 8f);
+                    if (Time.time >= _stateUntil) SetState(MonsterAwarenessState.Search, SearchDuration());
                     break;
                 case MonsterAwarenessState.Chase:
                     UpdateChase(seesPlayer, distance);
@@ -135,7 +135,7 @@ namespace NinetyNine
             if (seesPlayer)
             {
                 _lastKnownPosition = _player.transform.position;
-                _stateUntil = Time.time + SearchDuration();
+                _stateUntil = Time.time + LostSightGrace();
             }
             else if (Time.time >= _stateUntil)
             {
@@ -217,7 +217,16 @@ namespace NinetyNine
 
         private bool CanSeePlayer(float distance)
         {
-            if (_player.IsHidden || distance > SightDistance())
+            float sightDistance = SightDistance();
+            if (_player.IsCrouching)
+            {
+                sightDistance *= 0.58f;
+            }
+            if (!_game.IsFlashlightOn)
+            {
+                sightDistance *= 0.82f;
+            }
+            if (_player.IsHidden || distance > sightDistance)
             {
                 return false;
             }
@@ -229,7 +238,7 @@ namespace NinetyNine
             Vector3 origin = transform.position + Vector3.up * 1.35f;
             Vector3 target = _player.transform.position + Vector3.up * 1.1f;
             Vector3 direction = target - origin;
-            if (Vector3.Dot(transform.forward, direction.normalized) < 0.34f && distance > 2.1f)
+            if (Vector3.Dot(transform.forward, direction.normalized) < 0.48f && distance > 2.1f)
             {
                 return false;
             }
@@ -263,10 +272,10 @@ namespace NinetyNine
         {
             switch (_archetype)
             {
-                case MonsterArchetype.Watcher: return 3.35f;
-                case MonsterArchetype.CeilingChild: return 3.05f;
-                case MonsterArchetype.Janitor: return 2.55f;
-                default: return 2.72f;
+                case MonsterArchetype.Watcher: return 3.1f;
+                case MonsterArchetype.CeilingChild: return 2.85f;
+                case MonsterArchetype.Janitor: return 2.35f;
+                default: return 2.55f;
             }
         }
 
@@ -283,14 +292,21 @@ namespace NinetyNine
 
         private float SearchDuration()
         {
-            return _archetype == MonsterArchetype.Pursuer ? 11f : 8f;
+            return _archetype == MonsterArchetype.Pursuer ? 6f : 4.5f;
+        }
+
+        private float LostSightGrace()
+        {
+            return _archetype == MonsterArchetype.Pursuer ? 4.5f : 3f;
         }
 
         private void SetState(MonsterAwarenessState next, float duration)
         {
             bool enteringChase = next == MonsterAwarenessState.Chase && _state != MonsterAwarenessState.Chase;
             _state = next;
-            _stateUntil = duration > 0f ? Time.time + duration : Time.time + SearchDuration();
+            _stateUntil = duration > 0f
+                ? Time.time + duration
+                : Time.time + (next == MonsterAwarenessState.Chase ? LostSightGrace() : SearchDuration());
             if (enteringChase)
             {
                 _pauseUntil = Time.time + 0.72f;

@@ -122,7 +122,8 @@ namespace NinetyNineEditor
                     EvacuationFloorPlan plan = director.CreatePlan(seed * 7919, floor, 12f, 99 - floor);
                     themes.Add(plan.Theme);
                     events.Add(plan.Event);
-                    valid &= plan.Length >= 4 && plan.FloorNumber == floor;
+                    valid &= plan.FloorNumber == floor &&
+                        (floor == 99 ? plan.Length == 4 : floor == 1 ? plan.Length >= 8 : plan.Length >= 11);
                     valid &= !(floor == 99 && plan.SpawnMonster);
                     valid &= !(previous == FloorPressure.Chase && plan.Pressure == FloorPressure.Chase);
                     previous = plan.Pressure;

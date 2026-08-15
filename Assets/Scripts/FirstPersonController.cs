@@ -21,6 +21,7 @@ namespace NinetyNine
         private float _elevatorImpulse;
         private float _nextFootstepNoise;
         private float _nextBreathingNoise;
+        private bool _crouchToggled;
         private bool _cursorReleased;
         private bool _applicationFocused = true;
         private bool _hidden;
@@ -68,6 +69,7 @@ namespace NinetyNine
             _elevatorImpulse = 0f;
             _cursorReleased = false;
             _hidden = false;
+            _crouchToggled = false;
             IsCrouching = false;
             _controller.height = StandingHeight;
             _controller.center = new Vector3(0f, 0.88f, 0f);
@@ -119,7 +121,12 @@ namespace NinetyNine
 
             Vector2 input = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
             input = Vector2.ClampMagnitude(input, 1f);
-            IsCrouching = Input.GetKey(KeyCode.C) || Input.GetKey(KeyCode.LeftControl);
+            if (Input.GetKeyDown(KeyCode.C) || Input.GetKeyDown(KeyCode.LeftControl) ||
+                Input.GetKeyDown(KeyCode.RightControl))
+            {
+                _crouchToggled = !_crouchToggled;
+            }
+            IsCrouching = _crouchToggled;
             UpdateCrouchShape();
             bool wantsSprint = !IsCrouching && Input.GetKey(KeyCode.LeftShift) && input.sqrMagnitude > 0.05f;
             IsSprinting = wantsSprint && (!UseStamina || _stamina > 0.5f);
@@ -261,6 +268,15 @@ namespace NinetyNine
         }
 
 #if UNITY_EDITOR
+        public bool VerifyCrouchToggle()
+        {
+            bool original = _crouchToggled;
+            _crouchToggled = !original;
+            bool toggled = _crouchToggled != original;
+            _crouchToggled = original;
+            return toggled && _crouchToggled == original;
+        }
+
         public bool VerifyUnclampedYaw()
         {
             Quaternion before = transform.rotation;

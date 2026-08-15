@@ -138,12 +138,41 @@ namespace NinetyNine
                 }
             }
 
-            foreach (Vector2Int cell in cells)
+            List<Vector2Int> explorationRooms = new List<Vector2Int>();
+            if (!isStartingFloor && !isExitFloor)
             {
-                BuildCell(cell, cells, wallMaterial, theme, ceilingHeight, blackout, lightColor, random);
+                int roomCount = random.Next(2, 5);
+                int attempts = roomCount * 4;
+                while (explorationRooms.Count < roomCount && attempts-- > 0)
+                {
+                    Vector2Int anchor = mainPath[random.Next(2, mainPath.Count - 1)];
+                    Vector2Int roomCenter;
+                    if (TryAddExplorationRoom(anchor, cells, random, out roomCenter))
+                    {
+                        explorationRooms.Add(roomCenter);
+                    }
+                }
+            }
+            if (plan.SpawnMonster)
+            {
+                AddMonsterBypass(mainPath, cells, random);
             }
 
-            Vector3 farPosition = CellPosition(mainPath[mainPath.Count - 1]);
+            Vector2Int? lockerCell = plan.SpawnMonster && explorationRooms.Count > 0
+                ? explorationRooms[0]
+                : (Vector2Int?)null;
+
+            foreach (Vector2Int cell in cells)
+            {
+                bool allowThemeProp = !lockerCell.HasValue || cell != lockerCell.Value;
+                BuildCell(cell, cells, wallMaterial, theme, ceilingHeight, blackout, lightColor, random,
+                    allowThemeProp);
+            }
+            if (lockerCell.HasValue)
+            {
+                CreateEmergencyLocker(CellPosition(lockerCell.Value));
+            }
+
             if (isStartingFloor)
             {
                 EvacuationItemKind starterItem = random.NextDouble() < 0.5
@@ -159,11 +188,21 @@ namespace NinetyNine
                 EvacuationItemKind primary = lowPower || random.NextDouble() < 0.55
                     ? EvacuationItemKind.PowerCell
                     : RandomSmallItem(random);
-                CreatePickup(primary, farPosition + new Vector3(0f, 0.42f, 0f));
+                Vector2Int primaryCell = plan.SpawnMonster
+                    ? mainPath[Mathf.Max(2, mainPath.Count - 3)]
+                    : mainPath[mainPath.Count - 1];
+                CreatePickup(primary, CellPosition(primaryCell) + new Vector3(0f, 0.42f, 0f));
                 if (random.NextDouble() < 0.72)
                 {
                     Vector2Int bonusCell = mainPath[random.Next(2, mainPath.Count - 1)];
                     CreatePickup(RandomSmallItem(random), CellPosition(bonusCell) + new Vector3(0.7f, 0.34f, 0.35f));
+                }
+                int roomLootCount = Mathf.Min(explorationRooms.Count, random.Next(1, 3));
+                for (int i = 0; i < roomLootCount; i++)
+                {
+                    Vector2Int roomCell = explorationRooms[explorationRooms.Count - 1 - i];
+                    CreatePickup(RandomSmallItem(random), CellPosition(roomCell) +
+                        new Vector3(-0.62f, 0.34f, 0.25f));
                 }
 
                 if (plan.SpawnNpc)
@@ -183,10 +222,9 @@ namespace NinetyNine
 
                 if (plan.SpawnMonster)
                 {
-                    bool ambush = floorNumber < 85 && random.NextDouble() < 0.04;
-                    Vector2Int monsterCell = ambush ? mainPath[1] : mainPath[Mathf.Max(3, mainPath.Count - 2)];
+                    Vector2Int monsterCell = mainPath[mainPath.Count - 1];
                     CreateMonster(CellPosition(monsterCell) + new Vector3(0f, 0f, 0.6f),
-                        ambush ? 1.25f : 3f + (float)random.NextDouble() * 4f, plan.Monster);
+                        4f + (float)random.NextDouble() * 3f, plan.Monster);
                 }
             }
 
@@ -429,7 +467,7 @@ namespace NinetyNine
 
         private void BuildCell(Vector2Int cell, HashSet<Vector2Int> cells, Material wallMaterial,
             EvacuationTheme theme, float ceilingHeight, bool blackout, Color lightColor,
-            System.Random random)
+            System.Random random, bool allowThemeProp)
         {
             Vector3 center = CellPosition(cell);
             Box("Floor", center + new Vector3(0f, -0.08f, 0f), new Vector3(3f, 0.14f, 3f), _floor, _floorRoot);
@@ -453,7 +491,10 @@ namespace NinetyNine
                 light.shadows = _floorLights.Count < 4 ? LightShadows.Soft : LightShadows.None;
                 _floorLights.Add(light);
             }
-            AddThemeProp(theme, center, random);
+            if (allowThemeProp)
+            {
+                AddThemeProp(theme, center, random);
+            }
             AddArchitecturalDetail(theme, center, random);
             if (theme == EvacuationTheme.Flooded)
             {
@@ -552,6 +593,14 @@ namespace NinetyNine
             EvacuationInteractable interactable = root.gameObject.AddComponent<EvacuationInteractable>();
             interactable.Configure(EvacuationAction.Hide, label, EvacuationItemKind.PowerCell,
                 null, spot);
+        }
+
+        private void CreateEmergencyLocker(Vector3 center)
+        {
+            Transform locker = Box("EmergencyLocker", center + new Vector3(1.02f, 0.92f, 0f),
+                new Vector3(0.62f, 1.84f, 0.7f), _maintenance, _floorRoot);
+            ConfigureHidingSpot(locker, "躲进应急储物柜", new Vector3(0f, -0.84f, 0f),
+                new Vector3(-0.95f, -0.84f, 0f));
         }
 
         private void CreateEvidence(Vector3 position, int floorNumber, FloorEventKind floorEvent)
@@ -764,6 +813,70 @@ namespace NinetyNine
             if (_floorRoot != null)
             {
                 Destroy(_floorRoot.gameObject);
+            }
+        }
+
+        private static bool TryAddExplorationRoom(Vector2Int anchor, HashSet<Vector2Int> cells,
+            System.Random random, out Vector2Int roomCenter)
+        {
+            Vector2Int[] directions =
+            {
+                Vector2Int.left,
+                Vector2Int.right,
+                Vector2Int.up,
+                Vector2Int.down
+            };
+            int start = random.Next(directions.Length);
+            for (int i = 0; i < directions.Length; i++)
+            {
+                Vector2Int direction = directions[(start + i) % directions.Length];
+                Vector2Int entry = anchor + direction;
+                Vector2Int depth = entry + direction;
+                Vector2Int perpendicular = new Vector2Int(-direction.y, direction.x);
+                if (random.NextDouble() < 0.5)
+                {
+                    perpendicular = -perpendicular;
+                }
+                Vector2Int wing = depth + perpendicular;
+                if (cells.Contains(entry) || cells.Contains(depth) || cells.Contains(wing))
+                {
+                    continue;
+                }
+                cells.Add(entry);
+                cells.Add(depth);
+                cells.Add(wing);
+                Vector2Int alcove = entry + perpendicular;
+                if (!cells.Contains(alcove) && random.NextDouble() < 0.65)
+                {
+                    cells.Add(alcove);
+                }
+                roomCenter = depth;
+                return true;
+            }
+            roomCenter = anchor;
+            return false;
+        }
+
+        private static void AddMonsterBypass(List<Vector2Int> mainPath, HashSet<Vector2Int> cells,
+            System.Random random)
+        {
+            for (int i = 1; i < mainPath.Count - 1; i++)
+            {
+                Vector2Int before = mainPath[i] - mainPath[i - 1];
+                Vector2Int after = mainPath[i + 1] - mainPath[i];
+                if (before != after)
+                {
+                    continue;
+                }
+                Vector2Int side = new Vector2Int(-before.y, before.x);
+                if (random.NextDouble() < 0.5)
+                {
+                    side = -side;
+                }
+                cells.Add(mainPath[i - 1] + side);
+                cells.Add(mainPath[i] + side);
+                cells.Add(mainPath[i + 1] + side);
+                return;
             }
         }
 
