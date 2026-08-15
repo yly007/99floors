@@ -117,6 +117,8 @@ namespace NinetyNineEditor
             ConfigureTexture("Assets/Resources/Art/maintenance_metal.png", true, 1024);
             ConfigureTexture("Assets/Resources/Art/modular_surface_atlas.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/anomaly_decal_atlas.png", false, 2048);
+            ConfigureTexture("Assets/Resources/Art/survival_item_atlas_v2.png", false, 2048);
+            ConfigureTexture("Assets/Resources/Art/building_signage_atlas_v2.png", false, 2048);
 
             bool sceneExists = AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath) != null;
             if (!sceneExists)

@@ -101,6 +101,7 @@ namespace NinetyNine
         private bool _paused;
         private bool _showLauncherSettings;
         private bool _fullscreen;
+        private bool _phoneAnsweredThisFloor;
         private int _resolutionIndex = 2;
         private string _message = string.Empty;
         private string _dialogueText = string.Empty;
@@ -138,6 +139,9 @@ namespace NinetyNine
             _player = _world.Player;
             LoadPlayerSettings();
             ShowTitle();
+#if !UNITY_EDITOR
+            _showLauncherSettings = PlayerPrefs.GetInt("Evacuation.LauncherConfigured", 0) == 0;
+#endif
 
 #if UNITY_EDITOR
             string[] args = Environment.GetCommandLineArgs();
@@ -466,6 +470,10 @@ namespace NinetyNine
             Debug.Log("EVACUATION_STOP_ACCURACY_TEST=" + (_automationWorstStopError <= 1 ? "PASS" : "FAIL") +
                 " WORST=" + _automationWorstStopError);
             Debug.Log("EVACUATION_FULL_RUN=" + (_phase == EvacuationPhase.Won ? "PASS" : "FAIL"));
+            Debug.Log("EVACUATION_PRIMITIVE_POOL_TEST=" +
+                (_world.CreatedPrimitiveCount < 1400 ? "PASS" : "FAIL") +
+                " CREATED=" + _world.CreatedPrimitiveCount +
+                " AVAILABLE=" + _world.PooledPrimitiveCount);
         }
 #endif
 
@@ -502,7 +510,11 @@ namespace NinetyNine
             }
             if (_phase == EvacuationPhase.Won || _phase == EvacuationPhase.Lost)
             {
-                if (Input.GetKeyDown(KeyCode.R) || Input.GetKeyDown(KeyCode.Return))
+                if (Input.GetKeyDown(KeyCode.R))
+                {
+                    BeginRun(true);
+                }
+                else if (Input.GetKeyDown(KeyCode.Return))
                 {
                     BeginRun();
                 }
@@ -520,10 +532,19 @@ namespace NinetyNine
             UpdatePlayerCondition();
             if (_dialogueNpc != null)
             {
-                UpdateNpcDialogueInput();
-                UpdatePassengers();
-                UpdateWorldState();
-                return;
+                if (_world.Monster != null &&
+                    _world.Monster.State == MonsterAwarenessState.Chase)
+                {
+                    CloseNpcDialogue();
+                    ShowTransientMessage("对话被逼近的脚步打断了。快跑！", 1.8f);
+                }
+                else
+                {
+                    UpdateNpcDialogueInput();
+                    UpdatePassengers();
+                    UpdateWorldState();
+                    return;
+                }
             }
             UpdateInteraction();
             if (_automation)
@@ -584,6 +605,7 @@ namespace NinetyNine
             PlayerPrefs.SetFloat("Evacuation.Brightness", _brightness);
             PlayerPrefs.SetInt("Evacuation.Resolution", _resolutionIndex);
             PlayerPrefs.SetInt("Evacuation.Fullscreen", _fullscreen ? 1 : 0);
+            PlayerPrefs.SetInt("Evacuation.LauncherConfigured", 1);
             PlayerPrefs.Save();
         }
 
@@ -614,10 +636,15 @@ namespace NinetyNine
             }
         }
 
-        private void BeginRun()
+        private void BeginRun(bool reuseSeed = false)
         {
             SetPaused(false);
-            RunSeed = unchecked(Environment.TickCount * 397) ^ DateTime.Now.Millisecond;
+            if (!reuseSeed)
+            {
+                RunSeed = unchecked(Environment.TickCount * 397) ^ DateTime.Now.Millisecond;
+            }
+            UnityEngine.Random.InitState(RunSeed);
+            _floorDirector = new EvacuationFloorDirector();
             foreach (EvacuationNpc passenger in _passengers)
             {
                 if (passenger != null) Destroy(passenger.gameObject);
@@ -820,6 +847,7 @@ namespace NinetyNine
                 _floorsVisited++;
             }
             _automationVisitedFloor = false;
+            _phoneAnsweredThisFloor = false;
             ShowTransientMessage("电梯已停稳。使用门控打开门。", 1.6f);
         }
 
@@ -836,7 +864,13 @@ namespace NinetyNine
             ResolvePassengerDestinations();
             if (_currentFloor <= 1)
             {
-                ResolveExit();
+                if (_automation)
+                {
+                    ResolveExit();
+                    return;
+                }
+                _phase = EvacuationPhase.Stopped;
+                ShowTransientMessage("抵达一层。出口没有自动开启——去大厅尽头验证终端。", 3.2f);
                 return;
             }
             _phase = EvacuationPhase.Stopped;
@@ -893,6 +927,12 @@ namespace NinetyNine
                     break;
                 case EvacuationAction.Evidence:
                     CollectEvidence(_focus);
+                    break;
+                case EvacuationAction.RingingPhone:
+                    AnswerRingingPhone(_focus);
+                    break;
+                case EvacuationAction.ExitTerminal:
+                    ResolveExit();
                     break;
             }
         }
@@ -992,7 +1032,36 @@ namespace NinetyNine
             {
                 _world.Monster.NotifyTheft(item.transform.position);
             }
+            _world.NotifyFloorLooted();
             Destroy(item.gameObject);
+        }
+
+        private void AnswerRingingPhone(EvacuationInteractable phone)
+        {
+            if (phone == null || _phoneAnsweredThisFloor) return;
+            _phoneAnsweredThisFloor = true;
+            int outcome = Mathf.Abs((_currentPlan != null ? _currentPlan.Seed : RunSeed) % 3);
+            if (outcome == 0)
+            {
+                bool discovered = _story.Discover("phone_" + Mathf.Abs(_currentFloor % 7));
+                ShowTransientMessage(discovered
+                    ? "听筒里是你自己的声音：不要相信绿色出口灯。线索 +1。"
+                    : "听筒里只有你几分钟前的呼吸声。", 3f);
+            }
+            else if (outcome == 1)
+            {
+                _remainingTime += 30f;
+                ShowTransientMessage("时钟倒退了三十秒，但走廊尽头多了一道脚步声。", 2.8f);
+            }
+            else
+            {
+                _power = Mathf.Max(0.01f, _power - 1f);
+                if (_world.Monster != null) _world.Monster.TriggerChase();
+                ShowTransientMessage("电话接通的一刻，电梯掉了一格电。对方知道你在哪里。", 3f);
+            }
+            _audio.PlayThreatCue(phone.transform.position);
+            _world.NotifyFloorLooted();
+            Destroy(phone.gameObject);
         }
 
         private void InstallPowerCell()
@@ -1242,6 +1311,7 @@ namespace NinetyNine
             ShowTransientMessage(discovered ? "档案记录与已知楼层矛盾。线索 +1。" :
                 "这是已经见过的重复记录。", 1.8f);
             EvacuationSignals.Emit(evidence.transform.position, 6f, NoiseKind.Pickup);
+            _world.NotifyFloorLooted();
             Destroy(evidence.gameObject);
         }
 
@@ -1285,11 +1355,20 @@ namespace NinetyNine
                 if (!passenger.IsMimic &&
                     IsPassengerDestinationMatch(_currentFloor, passenger.DestinationFloor))
                 {
-                    _power = Mathf.Min(MaxPower, _power + 6f);
+                    int reward = Mathf.Clamp(4 + passenger.Trust, 5, 9);
+                    _power = Mathf.Min(MaxPower, _power + reward);
+                    if (passenger.Archetype == NpcArchetype.Medic)
+                    {
+                        _health = Mathf.Min(100f, _health + 24f);
+                    }
+                    else if (passenger.Archetype == NpcArchetype.Electrician && _doorIntegrity <= 0)
+                    {
+                        _doorIntegrity = 1;
+                    }
                     _rescued++;
                     _passengers.RemoveAt(i);
                     Destroy(passenger.gameObject);
-                    ShowTransientMessage("乘客到站，留下了一块应急电池：+6 电力。", 2f);
+                    ShowTransientMessage("乘客到站。信任决定了回报：+" + reward + " 电力。", 2f);
                 }
                 else if (!passenger.IsMimic && _currentFloor < passenger.DestinationFloor - 1)
                 {
@@ -1428,6 +1507,20 @@ namespace NinetyNine
             _player.CanMove = false;
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
+            LogRunResult("WIN", resolution.ToString());
+        }
+
+        private void LogRunResult(string result, string cause)
+        {
+            Debug.Log("EVACUATION_RUN_RESULT=" + result +
+                " SEED=" + RunSeed +
+                " FLOOR=" + _currentFloor +
+                " VISITED=" + _floorsVisited +
+                " RESCUED=" + _rescued +
+                " CLUES=" + (_story != null ? _story.ClueCount : 0) +
+                " POWER=" + _power.ToString("0.0") +
+                " POOL_CREATED=" + (_world != null ? _world.CreatedPrimitiveCount : 0) +
+                " CAUSE=" + cause);
         }
 
         private void Lose(string title, string body)
@@ -1445,6 +1538,7 @@ namespace NinetyNine
             _player.CanMove = false;
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
+            LogRunResult("LOSS", title);
         }
 
         public void ShowTransientMessage(string value, float duration)
@@ -1812,9 +1906,9 @@ namespace NinetyNine
                 else _showLauncherSettings = false;
             }
             y += 58f * scale;
-            if (paused && GUI.Button(new Rect(labelX, y, 230f * scale, 40f * scale), "使用新种子重开"))
+            if (paused && GUI.Button(new Rect(labelX, y, 230f * scale, 40f * scale), "重开当前种子"))
             {
-                BeginRun();
+                BeginRun(true);
             }
             if (GUI.Button(new Rect(labelX + (paused ? 250f : 125f) * scale, y,
                 (paused ? 250f : 250f) * scale, 40f * scale), "退出游戏"))
@@ -1838,7 +1932,7 @@ namespace NinetyNine
                 rect.width - 80f * scale, 70f * scale),
                 (_phase == EvacuationPhase.Won ? "抵达楼层 " : "死亡楼层 ") + _currentFloor +
                 "  ·  探索 " + _floorsVisited + " 层  ·  救出 " + _rescued +
-                " 人  ·  种子 " + RunSeed + "\n按 R 使用新种子重新撤离", _smallStyle);
+                " 人  ·  种子 " + RunSeed + "\n按 R 重试当前种子 · ENTER 开启新种子", _smallStyle);
         }
 
         private void DrawBar(Rect rect, float value, Color color)

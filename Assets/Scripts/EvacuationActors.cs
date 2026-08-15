@@ -12,7 +12,9 @@ namespace NinetyNine
         Item,
         Npc,
         Hide,
-        Evidence
+        Evidence,
+        RingingPhone,
+        ExitTerminal
     }
 
     public enum EvacuationItemKind

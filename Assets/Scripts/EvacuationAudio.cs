@@ -8,11 +8,14 @@ namespace NinetyNine
     {
         private readonly Dictionary<GameObject, AudioSource> _monsterSources =
             new Dictionary<GameObject, AudioSource>();
+        private readonly Dictionary<GameObject, float> _monsterBasePitch =
+            new Dictionary<GameObject, float>();
         private FirstPersonController _player;
         private AudioSource _ambience;
         private AudioSource _machinery;
         private AudioSource _breathing;
         private AudioSource _oneShot;
+        private AudioSource _doorSource;
         private AudioClip _ambientClip;
         private AudioClip _machineClip;
         private AudioClip _breathClip;
@@ -27,11 +30,14 @@ namespace NinetyNine
         private AudioClip _deathClip;
         private AudioClip _flashlightClip;
         private AudioClip _threatClip;
+        private AudioClip _phoneClip;
+        private AudioClip _distantKnockClip;
         private float _nextStepTime;
         private float _targetMachineVolume;
         private float _mood;
         private float _nextRailTime;
         private bool _travelling;
+        private float _nextDistantKnock;
 
         public void Initialize(FirstPersonController player)
         {
@@ -50,6 +56,8 @@ namespace NinetyNine
             _deathClip = CreateToneSweep("Fatal Drop", 105f, 21f, 2.2f, 0.7f);
             _flashlightClip = CreateNoiseImpact("Flashlight Click", 0.07f, 1100f, 0.23f, 990);
             _threatClip = CreateToneSweep("Threat Sting", 190f, 41f, 0.75f, 0.48f);
+            _phoneClip = CreatePhoneRing();
+            _distantKnockClip = CreateNoiseImpact("Distant Pipe Knock", 0.34f, 74f, 0.52f, 8127);
 
             _ambience = CreateSource("Floor Ambience", false, true, 0.34f);
             _ambience.clip = _ambientClip;
@@ -61,6 +69,11 @@ namespace NinetyNine
             _breathing.clip = _breathClip;
             _breathing.Play();
             _oneShot = CreateSource("Player Feedback", false, false, 0.82f);
+            _doorSource = CreateSource("Elevator Door Mechanism", true, false, 0.9f);
+            _doorSource.transform.position = new Vector3(0f, 1.45f, 2.15f);
+            _doorSource.minDistance = 1f;
+            _doorSource.maxDistance = 12f;
+            _nextDistantKnock = Time.time + 8f;
         }
 
         public void SetTravelling(bool travelling)
@@ -82,8 +95,8 @@ namespace NinetyNine
 
         public void PlayDoor()
         {
-            _oneShot.pitch = 1f;
-            _oneShot.PlayOneShot(_doorClip, 0.88f);
+            _doorSource.pitch = UnityEngine.Random.Range(0.96f, 1.03f);
+            _doorSource.PlayOneShot(_doorClip, 0.88f);
         }
 
         public void PlayBrake()
@@ -123,7 +136,7 @@ namespace NinetyNine
             AudioSource.PlayClipAtPoint(_threatClip, position, 0.95f);
         }
 
-        public void AttachMonsterSource(GameObject monster)
+        public void AttachMonsterSource(GameObject monster, MonsterArchetype archetype)
         {
             AudioSource source = monster.AddComponent<AudioSource>();
             source.clip = _monsterClip;
@@ -133,9 +146,25 @@ namespace NinetyNine
             source.minDistance = 1.2f;
             source.maxDistance = 24f;
             source.volume = 0.15f;
-            source.pitch = 0.72f;
+            float basePitch = archetype == MonsterArchetype.CeilingChild ? 1.18f :
+                archetype == MonsterArchetype.Watcher ? 0.58f :
+                archetype == MonsterArchetype.Janitor ? 0.76f : 0.68f;
+            source.pitch = basePitch;
             source.Play();
             _monsterSources[monster] = source;
+            _monsterBasePitch[monster] = basePitch;
+        }
+
+        public void AttachPhoneSource(GameObject phone)
+        {
+            AudioSource source = phone.AddComponent<AudioSource>();
+            source.clip = _phoneClip;
+            source.loop = true;
+            source.spatialBlend = 1f;
+            source.minDistance = 1f;
+            source.maxDistance = 18f;
+            source.volume = 0.72f;
+            source.Play();
         }
 
         public void SetMonsterUrgency(GameObject monster, float urgency)
@@ -144,7 +173,9 @@ namespace NinetyNine
             if (_monsterSources.TryGetValue(monster, out source) && source != null)
             {
                 source.volume = Mathf.Lerp(0.12f, 0.92f, urgency);
-                source.pitch = Mathf.Lerp(0.7f, 1.12f, urgency);
+                float basePitch;
+                if (!_monsterBasePitch.TryGetValue(monster, out basePitch)) basePitch = 0.7f;
+                source.pitch = Mathf.Lerp(basePitch, basePitch + 0.38f, urgency);
             }
         }
 
@@ -174,6 +205,14 @@ namespace NinetyNine
                 _nextStepTime = Time.time + pace;
                 _oneShot.pitch = UnityEngine.Random.Range(0.88f, 1.08f);
                 _oneShot.PlayOneShot(_stepClip, _player.IsSprinting ? 0.7f : 0.4f);
+            }
+            if (!_travelling && Time.time >= _nextDistantKnock)
+            {
+                _nextDistantKnock = Time.time + UnityEngine.Random.Range(9f, 19f);
+                Vector2 offset = UnityEngine.Random.insideUnitCircle.normalized *
+                    UnityEngine.Random.Range(7f, 13f);
+                AudioSource.PlayClipAtPoint(_distantKnockClip,
+                    _player.transform.position + new Vector3(offset.x, 1f, offset.y), 0.42f);
             }
         }
 
@@ -274,6 +313,25 @@ namespace NinetyNine
                 samples[i] = growl + filtered * gasp * 0.72f;
             }
             AudioClip clip = AudioClip.Create("Pursuer Breathing", samples.Length, 1, rate, false);
+            clip.SetData(samples, 0);
+            return clip;
+        }
+
+        private static AudioClip CreatePhoneRing()
+        {
+            const int rate = 22050;
+            const float duration = 2.6f;
+            int length = Mathf.RoundToInt(rate * duration);
+            float[] samples = new float[length];
+            for (int i = 0; i < length; i++)
+            {
+                float time = i / (float)rate;
+                float pulse = (time < 0.72f || (time > 1.02f && time < 1.74f)) ? 1f : 0f;
+                float tremolo = 0.62f + Mathf.Sin(time * Mathf.PI * 2f * 7f) * 0.18f;
+                samples[i] = (Mathf.Sin(time * Mathf.PI * 2f * 430f) * 0.32f +
+                    Mathf.Sin(time * Mathf.PI * 2f * 510f) * 0.18f) * pulse * tremolo;
+            }
+            AudioClip clip = AudioClip.Create("Unanswered Hallway Phone", length, 1, rate, false);
             clip.SetData(samples, 0);
             return clip;
         }

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace NinetyNine
@@ -31,12 +32,16 @@ namespace NinetyNine
         private float _nextPatrolChange;
         private int _lastNoiseSequence;
         private bool _territoryViolated;
+        private readonly List<Vector3> _patrolRoute = new List<Vector3>();
+        private int _patrolIndex;
+        private int _patrolDirection = 1;
 
         public MonsterAwarenessState State => _state;
         public MonsterArchetype Archetype => _archetype;
 
         public void Initialize(NinetyNineEvacuationGame game, FirstPersonController player,
-            EvacuationAudio audio, float delay, MonsterArchetype archetype)
+            EvacuationAudio audio, float delay, MonsterArchetype archetype,
+            IReadOnlyList<Vector3> patrolRoute = null)
         {
             _game = game;
             _player = player;
@@ -47,7 +52,13 @@ namespace NinetyNine
             _patrolTarget = _home;
             _wakeTime = Time.time + delay;
             _state = MonsterAwarenessState.Dormant;
-            _audio.AttachMonsterSource(gameObject);
+            _patrolRoute.Clear();
+            if (patrolRoute != null)
+            {
+                for (int i = 0; i < patrolRoute.Count; i++) _patrolRoute.Add(patrolRoute[i]);
+                _patrolIndex = Mathf.Max(0, _patrolRoute.Count - 1);
+            }
+            _audio.AttachMonsterSource(gameObject, archetype);
         }
 
         public void TriggerChase()
@@ -169,6 +180,19 @@ namespace NinetyNine
 
         private void UpdatePatrol()
         {
+            if (_patrolRoute.Count > 1)
+            {
+                _patrolTarget = _patrolRoute[_patrolIndex];
+                if (Vector3.Distance(transform.position, _patrolTarget) < 0.7f)
+                {
+                    if (_patrolIndex >= _patrolRoute.Count - 1) _patrolDirection = -1;
+                    else if (_patrolIndex <= 0) _patrolDirection = 1;
+                    _patrolIndex = Mathf.Clamp(_patrolIndex + _patrolDirection, 0, _patrolRoute.Count - 1);
+                    _patrolTarget = _patrolRoute[_patrolIndex];
+                }
+                MoveTowards(_patrolTarget, _archetype == MonsterArchetype.CeilingChild ? 0.8f : 1.05f);
+                return;
+            }
             if (Time.time >= _nextPatrolChange || Vector3.Distance(transform.position, _patrolTarget) < 0.7f)
             {
                 Vector2 offset = Random.insideUnitCircle * 4f;
