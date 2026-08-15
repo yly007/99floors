@@ -72,7 +72,9 @@ namespace NinetyNineEditor
                 "Standard",
                 "Unlit/Texture",
                 "Particles/Standard Unlit",
-                "Hidden/NinetyNine/AnalogHorror"
+                "Hidden/NinetyNine/AnalogHorror",
+                "NinetyNine/AdditiveParticle",
+                "NinetyNine/CharacterFaceDecal"
             };
             foreach (string shaderName in requiredShaderNames)
             {
@@ -116,6 +118,8 @@ namespace NinetyNineEditor
             ConfigureTexture("Assets/Resources/Art/survival_item_atlas_v2.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/building_signage_atlas_v2.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/elevator_control_atlas_v3.png", false, 2048);
+            ConfigureTexture("Assets/Resources/Art/character_face_atlas_v1.png", false, 2048);
+            ConfigureTexture("Assets/Resources/Art/horror_particle_atlas_v1.png", false, 2048);
 
             bool sceneExists = AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath) != null;
             if (!sceneExists)
@@ -175,6 +179,7 @@ namespace NinetyNineEditor
         {
             HashSet<EvacuationTheme> themes = new HashSet<EvacuationTheme>();
             HashSet<FloorEventKind> events = new HashSet<FloorEventKind>();
+            HashSet<FloorLayoutKind> layouts = new HashSet<FloorLayoutKind>();
             bool valid = true;
             bool deterministic = true;
             for (int seed = 1; seed <= 1000; seed++)
@@ -189,20 +194,36 @@ namespace NinetyNineEditor
                         99 - floor);
                     themes.Add(plan.Theme);
                     events.Add(plan.Event);
+                    layouts.Add(plan.Layout);
                     deterministic &= plan.Seed == replay.Seed && plan.Theme == replay.Theme &&
                         plan.Event == replay.Event && plan.Pressure == replay.Pressure &&
-                        plan.Monster == replay.Monster && plan.Length == replay.Length &&
+                        plan.Monster == replay.Monster && plan.Layout == replay.Layout &&
+                        plan.Length == replay.Length &&
                         plan.SpawnMonster == replay.SpawnMonster && plan.SpawnNpc == replay.SpawnNpc &&
                         plan.SpawnEvidence == replay.SpawnEvidence;
                     valid &= plan.FloorNumber == floor &&
                         (floor == 99 ? plan.Length == 4 : floor == 1 ? plan.Length >= 8 : plan.Length >= 11);
                     valid &= !(floor == 99 && plan.SpawnMonster);
                     valid &= !(previous == FloorPressure.Chase && plan.Pressure == FloorPressure.Chase);
+                    List<Vector2Int> generatedPath = new List<Vector2Int>();
+                    HashSet<Vector2Int> generatedCells = new HashSet<Vector2Int>();
+                    EvacuationLayoutUtility.Build(plan.Layout, plan.Length,
+                        new System.Random(plan.Seed), generatedPath, generatedCells);
+                    EvacuationNavigationGraph generatedNavigation =
+                        new EvacuationNavigationGraph(generatedCells);
+                    Vector3 generatedWaypoint;
+                    valid &= generatedPath.Count == plan.Length &&
+                        generatedNavigation.TryGetNextWaypoint(
+                            new Vector3(0f, 0f, 4f),
+                            new Vector3(generatedPath[generatedPath.Count - 1].x * 3f, 0f,
+                                4f + generatedPath[generatedPath.Count - 1].y * 3f),
+                            out generatedWaypoint);
                     previous = plan.Pressure;
                 }
             }
             valid &= themes.Count == 6;
             valid &= events.Count >= 20;
+            valid &= layouts.Count == 5;
             valid &= deterministic;
             HashSet<Vector2Int> navigationCells = new HashSet<Vector2Int>
             {
@@ -217,7 +238,8 @@ namespace NinetyNineEditor
                 Vector3.Distance(navigationWaypoint, new Vector3(0f, 0f, 7f)) < 0.05f;
             valid &= navigationValid;
             Debug.Log("EVACUATION_DIRECTOR_1000_SEEDS=" + (valid ? "PASS" : "FAIL") +
-                " THEMES=" + themes.Count + " EVENTS=" + events.Count);
+                " THEMES=" + themes.Count + " EVENTS=" + events.Count +
+                " LAYOUTS=" + layouts.Count);
             Debug.Log("EVACUATION_SEED_REPLAY_TEST=" + (deterministic ? "PASS" : "FAIL"));
             Debug.Log("EVACUATION_GRID_NAVIGATION_TEST=" + (navigationValid ? "PASS" : "FAIL"));
             if (!valid)

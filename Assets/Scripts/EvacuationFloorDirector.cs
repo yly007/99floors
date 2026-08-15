@@ -20,6 +20,8 @@ namespace NinetyNine
             FloorEventKind floorEvent = start ? FloorEventKind.None :
                 (FloorEventKind)random.Next(1, System.Enum.GetValues(typeof(FloorEventKind)).Length);
             MonsterArchetype monster = (MonsterArchetype)random.Next(0, 4);
+            FloorLayoutKind layout = start ? FloorLayoutKind.LongSpine :
+                exit ? FloorLayoutKind.CentralHub : (FloorLayoutKind)random.Next(0, 5);
 
             EvacuationFloorPlan result = new EvacuationFloorPlan
             {
@@ -29,6 +31,7 @@ namespace NinetyNine
                 Event = exit ? FloorEventKind.FalseLobby : floorEvent,
                 Pressure = pressure,
                 Monster = monster,
+                Layout = layout,
                 Length = start ? 4 : exit ? 8 : random.Next(11, 17),
                 Blackout = !start && !exit && (floorEvent == FloorEventKind.Blackout ||
                     floorEvent == FloorEventKind.SequentialBlackout || random.NextDouble() < 0.14),

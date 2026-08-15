@@ -39,7 +39,8 @@ namespace NinetyNine
         {
             if (_material != null)
             {
-                DestroyImmediate(_material);
+                if (Application.isPlaying) Destroy(_material);
+                else DestroyImmediate(_material);
                 _material = null;
             }
         }

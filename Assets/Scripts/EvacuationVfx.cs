@@ -5,7 +5,7 @@ namespace NinetyNine
 {
     public sealed class EvacuationVfx : MonoBehaviour
     {
-        private static Material _particleMaterial;
+        private static readonly Material[] ParticleMaterials = new Material[4];
         private static readonly Stack<ParticleSystem> AvailableSystems = new Stack<ParticleSystem>();
         private static Transform _poolRoot;
 
@@ -24,7 +24,8 @@ namespace NinetyNine
 
         private void CreateDust(EvacuationTheme theme, int length)
         {
-            ParticleSystem particles = CreateSystem("FloatingDust", new Vector3(0f, 1.4f, 4f + length * 1.35f));
+            ParticleSystem particles = CreateSystem("FloatingDust",
+                new Vector3(0f, 1.4f, 4f + length * 1.35f), 0);
             ParticleSystem.MainModule main = particles.main;
             main.loop = true;
             main.startLifetime = new ParticleSystem.MinMaxCurve(5f, 9f);
@@ -46,7 +47,7 @@ namespace NinetyNine
         private void CreateSparks(int length)
         {
             ParticleSystem particles = CreateSystem("ElectricalSparks", new Vector3(0.8f, 2.65f,
-                4f + length * 1.1f));
+                4f + length * 1.1f), 1);
             ParticleSystem.MainModule main = particles.main;
             main.loop = true;
             main.startLifetime = new ParticleSystem.MinMaxCurve(0.12f, 0.45f);
@@ -65,7 +66,7 @@ namespace NinetyNine
         private void CreateDrips(int length)
         {
             ParticleSystem particles = CreateSystem("CeilingDrips", new Vector3(0f, 2.8f,
-                4f + length * 1.25f));
+                4f + length * 1.25f), 2);
             ParticleSystem.MainModule main = particles.main;
             main.loop = true;
             main.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 1.2f);
@@ -81,7 +82,7 @@ namespace NinetyNine
             particles.Play();
         }
 
-        private ParticleSystem CreateSystem(string objectName, Vector3 localPosition)
+        private ParticleSystem CreateSystem(string objectName, Vector3 localPosition, int materialIndex)
         {
             ParticleSystem particles = null;
             while (AvailableSystems.Count > 0 && particles == null)
@@ -105,7 +106,7 @@ namespace NinetyNine
             root.transform.localPosition = localPosition;
             ParticleSystemRenderer renderer = root.GetComponent<ParticleSystemRenderer>();
             renderer.renderMode = ParticleSystemRenderMode.Billboard;
-            renderer.sharedMaterial = GetParticleMaterial();
+            renderer.sharedMaterial = GetParticleMaterial(materialIndex);
             return particles;
         }
 
@@ -127,22 +128,32 @@ namespace NinetyNine
             }
         }
 
-        private static Material GetParticleMaterial()
+        private static Material GetParticleMaterial(int index)
         {
-            if (_particleMaterial != null)
+            index = Mathf.Clamp(index, 0, ParticleMaterials.Length - 1);
+            if (ParticleMaterials[index] != null)
             {
-                return _particleMaterial;
+                return ParticleMaterials[index];
             }
 
-            Shader shader = Shader.Find("Particles/Standard Unlit") ??
-                Shader.Find("Legacy Shaders/Particles/Alpha Blended") ??
-                Shader.Find("Sprites/Default") ?? Shader.Find("Standard");
-            _particleMaterial = new Material(shader)
+            Shader shader = Shader.Find("NinetyNine/AdditiveParticle") ??
+                Shader.Find("Particles/Standard Unlit") ?? Shader.Find("Standard");
+            Material material = new Material(shader)
             {
-                name = "Runtime Horror Particles",
+                name = "Runtime Horror Particle " + index,
                 hideFlags = HideFlags.HideAndDontSave
             };
-            return _particleMaterial;
+            Texture2D texture = Resources.Load<Texture2D>("Art/horror_particle_atlas_v1");
+            if (texture != null)
+            {
+                material.mainTexture = texture;
+                int rowFromTop = index / 2;
+                material.mainTextureScale = new Vector2(0.5f, 0.5f);
+                material.mainTextureOffset = new Vector2((index % 2) * 0.5f,
+                    1f - (rowFromTop + 1) * 0.5f);
+            }
+            ParticleMaterials[index] = material;
+            return material;
         }
     }
 }

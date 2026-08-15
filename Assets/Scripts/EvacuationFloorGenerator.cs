@@ -53,6 +53,8 @@ namespace NinetyNine
         private Material _surveillanceSign;
         private readonly Dictionary<EvacuationItemKind, Material> _itemAtlasMaterials =
             new Dictionary<EvacuationItemKind, Material>();
+        private readonly Dictionary<int, Material> _characterFaceMaterials =
+            new Dictionary<int, Material>();
         private Material _floor;
         private Material _redGlow;
         private Material _cyanGlow;
@@ -123,7 +125,8 @@ namespace NinetyNine
             bool distorted = plan.Distorted;
             int length = plan.Length;
 
-            _floorRoot = new GameObject("Floor_" + floorNumber + "_" + theme).transform;
+            _floorRoot = new GameObject("Floor_" + floorNumber + "_" + theme + "_" +
+                plan.Layout).transform;
             _floorRoot.SetParent(_root, false);
             _floorRoot.gameObject.AddComponent<EvacuationVfx>().Configure(theme, plan.Event, length);
             Material wallMaterial = GetThemeMaterial(theme);
@@ -132,29 +135,7 @@ namespace NinetyNine
 
             List<Vector2Int> mainPath = new List<Vector2Int>();
             HashSet<Vector2Int> cells = new HashSet<Vector2Int>();
-            Vector2Int cursor = Vector2Int.zero;
-            cells.Add(cursor);
-            mainPath.Add(cursor);
-            for (int i = 1; i < length; i++)
-            {
-                Vector2Int next;
-                if (i % 3 == 0 && random.NextDouble() < 0.66)
-                {
-                    int side = random.NextDouble() < 0.5 ? -1 : 1;
-                    next = cursor + new Vector2Int(side, 0);
-                    if (cells.Contains(next))
-                    {
-                        next = cursor + Vector2Int.up;
-                    }
-                }
-                else
-                {
-                    next = cursor + Vector2Int.up;
-                }
-                cursor = next;
-                cells.Add(cursor);
-                mainPath.Add(cursor);
-            }
+            EvacuationLayoutUtility.Build(plan.Layout, length, random, mainPath, cells);
             for (int i = 2; i < mainPath.Count - 2; i++)
             {
                 if (random.NextDouble() < 0.38)
@@ -200,6 +181,7 @@ namespace NinetyNine
                 BuildCell(cell, cells, wallMaterial, theme, ceilingHeight, blackout, lightColor, random,
                     allowThemeProp);
             }
+            CreateLayoutLandmark(plan.Layout, mainPath, random);
             if (lockerCell.HasValue)
             {
                 CreateEmergencyLocker(CellPosition(lockerCell.Value));
@@ -724,6 +706,60 @@ namespace NinetyNine
             }
         }
 
+        private void CreateLayoutLandmark(FloorLayoutKind layout, List<Vector2Int> mainPath,
+            System.Random random)
+        {
+            if (mainPath.Count < 4) return;
+            Vector3 center = CellPosition(mainPath[mainPath.Count / 2]);
+            if (layout == FloorLayoutKind.CentralHub)
+            {
+                Cylinder("HubColumn", center + Vector3.up * 1.5f,
+                    new Vector3(0.42f, 1.5f, 0.42f), _maintenance, _floorRoot, true);
+                for (int i = 0; i < 4; i++)
+                {
+                    float angle = i * 90f;
+                    Vector3 offset = Quaternion.Euler(0f, angle, 0f) * new Vector3(0f, 0.36f, 1.05f);
+                    Transform bench = Box("HubBench", center + offset,
+                        new Vector3(1.2f, 0.18f, 0.38f), _apartment, _floorRoot, false);
+                    bench.localRotation = Quaternion.Euler(0f, angle, 0f);
+                }
+            }
+            else if (layout == FloorLayoutKind.CorridorLoop)
+            {
+                Box("LoopDirectory", center + new Vector3(0f, 1.4f, 1.36f),
+                    new Vector3(1.5f, 1.1f, 0.08f), _surveillanceSign, _floorRoot, false);
+                Box("LoopFloorStripe", center + new Vector3(0f, 0.02f, 0f),
+                    new Vector3(2.25f, 0.025f, 0.18f), _amberGlow, _floorRoot, false);
+            }
+            else if (layout == FloorLayoutKind.ApartmentSuites)
+            {
+                for (int i = 2; i < mainPath.Count - 1; i += 3)
+                {
+                    Vector3 position = CellPosition(mainPath[i]);
+                    int side = ((i / 3) & 1) == 0 ? -1 : 1;
+                    Box("SuiteDoor", position + new Vector3(side * 1.42f, 1.35f, 0f),
+                        new Vector3(0.08f, 2.5f, 1.08f), _doorMetal, _floorRoot, false);
+                    Sphere("SuiteKnob", position + new Vector3(side * 1.35f, 1.28f, 0.34f),
+                        new Vector3(0.055f, 0.055f, 0.055f), _brass, _floorRoot, false);
+                }
+            }
+            else if (layout == FloorLayoutKind.ServiceMaze)
+            {
+                for (int i = 1; i < mainPath.Count; i += 3)
+                {
+                    Vector3 position = CellPosition(mainPath[i]);
+                    Cylinder("OverheadPipe", position + new Vector3(0.72f, 2.72f, 0f),
+                        new Vector3(0.055f, 1.28f, 0.055f), _brass, _floorRoot, false,
+                        new Vector3(90f, 0f, 0f));
+                }
+            }
+            else if (random.NextDouble() < 0.7)
+            {
+                Box("SpineCeilingBeam", center + Vector3.up * 2.7f,
+                    new Vector3(2.7f, 0.14f, 0.2f), _maintenance, _floorRoot, false);
+            }
+        }
+
         private void AddThemeProp(EvacuationTheme theme, Vector3 center, System.Random random)
         {
             if (random.NextDouble() > 0.58)
@@ -992,8 +1028,8 @@ namespace NinetyNine
             Vector3 iconSize = kind == EvacuationItemKind.PowerCell
                 ? new Vector3(0.3f, 0.56f, 0.018f)
                 : new Vector3(0.22f, 0.4f, 0.018f);
-            Box("ItemDecal", new Vector3(0f, 0f, -0.19f), iconSize,
-                GetItemAtlasMaterial(kind), root, false);
+            Decal("ItemDecal", new Vector3(0f, 0f, -0.196f),
+                new Vector2(iconSize.x, iconSize.y), GetItemAtlasMaterial(kind), root);
             BoxCollider hitbox = root.gameObject.AddComponent<BoxCollider>();
             hitbox.size = kind == EvacuationItemKind.PowerCell
                 ? new Vector3(0.58f, 0.82f, 0.48f)
@@ -1043,12 +1079,25 @@ namespace NinetyNine
             Material bodyMaterial = archetype == MonsterArchetype.Janitor ? _maintenance : _black;
             Capsule("Torso", new Vector3(0f, 1.12f * bodyScale, 0f),
                 new Vector3(0.48f, 1.05f * bodyScale, 0.34f), bodyMaterial, root.transform, false);
+            Cylinder("LeftLeg", new Vector3(-0.19f, 0.36f * bodyScale, 0f),
+                new Vector3(0.11f, 0.68f * bodyScale, 0.11f), bodyMaterial,
+                root.transform, false, new Vector3(0f, 0f, -2f));
+            Cylinder("RightLeg", new Vector3(0.19f, 0.36f * bodyScale, 0f),
+                new Vector3(0.11f, 0.68f * bodyScale, 0.11f), bodyMaterial,
+                root.transform, false, new Vector3(0f, 0f, 2f));
             Sphere("Head", new Vector3(0f, 2.25f * bodyScale, 0f),
                 new Vector3(0.38f, 0.48f, 0.34f), _black, root.transform, false);
+            Decal("Face", new Vector3(0f, 2.25f * bodyScale, -0.345f),
+                new Vector2(0.62f, 0.72f), GetCharacterFaceMaterial((int)archetype),
+                root.transform);
             Cylinder("LeftArm", new Vector3(-0.5f, 1.15f, 0f), new Vector3(0.075f, 0.92f, 0.075f), _black, root.transform, false,
                 new Vector3(0f, 0f, -9f));
             Cylinder("RightArm", new Vector3(0.5f, 1.15f, 0f), new Vector3(0.075f, 0.92f, 0.075f), _black, root.transform, false,
                 new Vector3(0f, 0f, 9f));
+            Sphere("LeftHand", new Vector3(-0.58f, 0.5f, -0.02f),
+                new Vector3(0.13f, 0.2f, 0.11f), _black, root.transform, false);
+            Sphere("RightHand", new Vector3(0.58f, 0.5f, -0.02f),
+                new Vector3(0.13f, 0.2f, 0.11f), _black, root.transform, false);
             Sphere("EyeL", new Vector3(-0.13f, 2.32f, -0.31f), new Vector3(0.035f, 0.022f, 0.015f), _redGlow, root.transform, false);
             Sphere("EyeR", new Vector3(0.13f, 2.32f, -0.31f), new Vector3(0.035f, 0.022f, 0.015f), _redGlow, root.transform, false);
             if (archetype == MonsterArchetype.Watcher)
@@ -1089,8 +1138,15 @@ namespace NinetyNine
             root.transform.position = position;
             Material clothes = mimic ? _mimicClothes : _survivorClothes;
             Capsule("Body", new Vector3(0f, 0.88f, 0f), new Vector3(0.45f, 0.8f, 0.34f), clothes, root.transform, false);
+            Cylinder("LeftLeg", new Vector3(-0.16f, 0.26f, 0f),
+                new Vector3(0.1f, 0.52f, 0.1f), clothes, root.transform, false);
+            Cylinder("RightLeg", new Vector3(0.16f, 0.26f, 0f),
+                new Vector3(0.1f, 0.52f, 0.1f), clothes, root.transform, false);
             Sphere("Head", new Vector3(0f, 1.82f, 0f), new Vector3(0.34f, 0.4f, 0.32f),
                 mimic ? _black : _brass, root.transform, false);
+            int faceIndex = mimic ? 1 : 4 + Mathf.Abs(destination % 4);
+            Decal("Face", new Vector3(0f, 1.82f, -0.325f), new Vector2(0.52f, 0.62f),
+                GetCharacterFaceMaterial(faceIndex), root.transform);
             Cylinder("LeftArm", new Vector3(-0.43f, 0.92f, 0f),
                 new Vector3(0.055f, 0.58f, 0.055f), clothes, root.transform, false,
                 new Vector3(0f, 0f, -5f));
@@ -1099,6 +1155,8 @@ namespace NinetyNine
                 new Vector3(0f, 0f, 5f));
             Box("CoatHem", new Vector3(0f, 0.42f, 0.02f),
                 new Vector3(0.62f, 0.62f, 0.42f), clothes, root.transform, false);
+            Box("Shoulders", new Vector3(0f, 1.28f, 0.02f),
+                new Vector3(0.86f, 0.2f, 0.42f), clothes, root.transform, false);
             if (mimic)
             {
                 Sphere("WrongEye", new Vector3(0.11f, 1.87f, -0.3f), new Vector3(0.028f, 0.018f, 0.012f), _redGlow, root.transform, false);
@@ -1134,10 +1192,18 @@ namespace NinetyNine
             root.localRotation = Quaternion.Euler(0f, 90f, 0f);
             Box("Recess", new Vector3(0f, 0f, 0.025f), new Vector3(0.9f, 0.44f, 0.11f),
                 _black, root, false);
-            Transform panel = Box("Surface", Vector3.zero, new Vector3(0.82f, 0.4f, 0.075f),
+            Box("MetalHousing", Vector3.zero, new Vector3(0.82f, 0.4f, 0.075f),
+                _metal, root, false);
+            Decal("ControlFace", new Vector3(0f, 0f, -0.041f), new Vector2(0.78f, 0.36f),
                 GetControlAtlasMaterial(action), root);
-            EvacuationInteractable interactable = panel.gameObject.AddComponent<EvacuationInteractable>();
+            BoxCollider hitbox = root.gameObject.AddComponent<BoxCollider>();
+            hitbox.size = new Vector3(0.84f, 0.42f, 0.14f);
+            hitbox.isTrigger = true;
+            EvacuationInteractable interactable = root.gameObject.AddComponent<EvacuationInteractable>();
             interactable.Configure(action, label);
+            TextMesh engravedLabel = CreateText("EngravedLabel", root, displayName, 0.032f,
+                new Color(0.58f, 0.62f, 0.6f), new Vector3(-0.19f, -0.145f, -0.049f));
+            engravedLabel.fontStyle = FontStyle.Bold;
             Transform indicator = CreateControlIndicator(action, root, glow);
             _controlIndicators[action] = indicator.GetComponent<Renderer>();
         }
@@ -1368,6 +1434,27 @@ namespace NinetyNine
             return material;
         }
 
+        private Material GetCharacterFaceMaterial(int index)
+        {
+            index = Mathf.Clamp(index, 0, 7);
+            Material material;
+            if (_characterFaceMaterials.TryGetValue(index, out material)) return material;
+            Shader shader = Shader.Find("NinetyNine/CharacterFaceDecal") ?? Shader.Find("Unlit/Texture");
+            material = new Material(shader) { name = "Character Face " + index };
+            Texture2D texture = Resources.Load<Texture2D>("Art/character_face_atlas_v1");
+            if (texture != null)
+            {
+                texture.wrapMode = TextureWrapMode.Clamp;
+                material.mainTexture = texture;
+                material.mainTextureScale = new Vector2(0.25f, 0.5f);
+                int rowFromTop = index / 4;
+                material.mainTextureOffset = new Vector2((index % 4) * 0.25f,
+                    1f - (rowFromTop + 1) * 0.5f);
+            }
+            _characterFaceMaterials[index] = material;
+            return material;
+        }
+
         private static Material MakeGeneratedAtlasMaterial(string name, string resourcePath, int index,
             int columns = 4, int rows = 2)
         {
@@ -1464,6 +1551,14 @@ namespace NinetyNine
         {
             return _primitivePool.Rent(PrimitiveType.Cylinder, name, parent, position, scale,
                 Quaternion.Euler(rotation), material, collider);
+        }
+
+        private Transform Decal(string name, Vector3 position, Vector2 size, Material material,
+            Transform parent)
+        {
+            return _primitivePool.Rent(PrimitiveType.Quad, name, parent, position,
+                new Vector3(size.x, size.y, 1f), Quaternion.identity,
+                material, false);
         }
 
         private Light CreateLight(string name, Vector3 position, Color color, float intensity,

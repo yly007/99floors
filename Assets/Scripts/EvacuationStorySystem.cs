@@ -7,7 +7,8 @@ namespace NinetyNine
         FalseLoop,
         EscapedAlone,
         ShutDownBuilding,
-        NewAdministrator
+        NewAdministrator,
+        MimicTakeover
     }
 
     public sealed class EvacuationStorySystem
@@ -28,6 +29,7 @@ namespace NinetyNine
 
         public ExitResolution Resolve(bool carriesMimic, int rescued, bool acceptedAdministrator)
         {
+            if (carriesMimic) return ExitResolution.MimicTakeover;
             if (acceptedAdministrator) return ExitResolution.NewAdministrator;
             if (_clues.Count < 3) return ExitResolution.FalseLoop;
             if (_clues.Count >= 6 && rescued >= 1 && !carriesMimic)

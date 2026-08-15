@@ -13,12 +13,15 @@ namespace NinetyNine
         private readonly Dictionary<GameObject, AudioLowPassFilter> _monsterFilters =
             new Dictionary<GameObject, AudioLowPassFilter>();
         private readonly List<AudioSource> _spatialOneShots = new List<AudioSource>();
+        private readonly List<AudioLowPassFilter> _outsideFilters = new List<AudioLowPassFilter>();
         private FirstPersonController _player;
         private AudioSource _ambience;
         private AudioSource _machinery;
         private AudioSource _breathing;
         private AudioSource _oneShot;
         private AudioSource _doorSource;
+        private AudioSource _heartbeat;
+        private AudioSource _lowPowerAlarm;
         private AudioClip _ambientClip;
         private AudioClip _machineClip;
         private AudioClip _breathClip;
@@ -37,6 +40,11 @@ namespace NinetyNine
         private AudioClip _threatClip;
         private AudioClip _phoneClip;
         private AudioClip _distantKnockClip;
+        private AudioClip[] _stepVariants;
+        private AudioClip[] _metalStepVariants;
+        private AudioClip[] _wetStepVariants;
+        private AudioClip[] _doorVariants;
+        private AudioClip[] _railVariants;
         private float _nextStepTime;
         private float _targetMachineVolume;
         private float _mood;
@@ -46,6 +54,9 @@ namespace NinetyNine
         private float _doorSeal;
         private int _spatialSourceIndex;
         private int _surfaceIndex;
+        private float _power01 = 1f;
+        private float _tension;
+        private bool _criticalPower;
         private System.Random _random = new System.Random(9941);
         private AudioLowPassFilter _ambienceFilter;
 
@@ -70,6 +81,36 @@ namespace NinetyNine
             _threatClip = CreateToneSweep("Threat Sting", 190f, 41f, 0.75f, 0.48f);
             _phoneClip = CreatePhoneRing();
             _distantKnockClip = CreateNoiseImpact("Distant Pipe Knock", 0.34f, 74f, 0.52f, 8127);
+            _stepVariants = new[]
+            {
+                _stepClip,
+                CreateNoiseImpact("Heavy Footstep B", 0.18f, 88f, 0.68f, 1069),
+                CreateNoiseImpact("Heavy Footstep C", 0.2f, 104f, 0.64f, 1123)
+            };
+            _metalStepVariants = new[]
+            {
+                _metalStepClip,
+                CreateNoiseImpact("Metal Footstep B", 0.13f, 176f, 0.56f, 1877),
+                CreateNoiseImpact("Metal Footstep C", 0.16f, 148f, 0.62f, 1931)
+            };
+            _wetStepVariants = new[]
+            {
+                _wetStepClip,
+                CreateNoiseImpact("Wet Footstep B", 0.24f, 51f, 0.58f, 2789),
+                CreateNoiseImpact("Wet Footstep C", 0.2f, 67f, 0.52f, 2851)
+            };
+            _doorVariants = new[]
+            {
+                _doorClip,
+                CreateNoiseImpact("Door Gear Strain", 0.72f, 43f, 0.5f, 4421),
+                CreateMetalSweep()
+            };
+            _railVariants = new[]
+            {
+                _railClip,
+                CreateNoiseImpact("Rail Joint B", 0.18f, 72f, 0.4f, 1277),
+                CreateNoiseImpact("Rail Joint C", 0.14f, 101f, 0.34f, 1321)
+            };
 
             _ambience = CreateSource("Floor Ambience", false, true, 0.34f);
             _ambienceFilter = _ambience.gameObject.AddComponent<AudioLowPassFilter>();
@@ -81,6 +122,12 @@ namespace NinetyNine
             _breathing = CreateSource("Player Breathing", false, true, 0f);
             _breathing.clip = _breathClip;
             _breathing.Play();
+            _heartbeat = CreateSource("Player Heartbeat", false, true, 0f);
+            _heartbeat.clip = CreateHeartbeat();
+            _heartbeat.Play();
+            _lowPowerAlarm = CreateSource("Low Power Relay", false, true, 0f);
+            _lowPowerAlarm.clip = CreateLowPowerRelay();
+            _lowPowerAlarm.Play();
             _oneShot = CreateSource("Player Feedback", false, false, 0.82f);
             _doorSource = CreateSource("Elevator Door Mechanism", true, false, 0.9f);
             _doorSource.transform.position = new Vector3(0f, 1.45f, 2.15f);
@@ -91,6 +138,9 @@ namespace NinetyNine
                 AudioSource spatialSource = CreateSource("Spatial One Shot " + (i + 1), true, false, 1f);
                 spatialSource.minDistance = 1f;
                 spatialSource.maxDistance = 24f;
+                AudioLowPassFilter filter = spatialSource.gameObject.AddComponent<AudioLowPassFilter>();
+                filter.cutoffFrequency = 15000f;
+                _outsideFilters.Add(filter);
                 _spatialOneShots.Add(spatialSource);
             }
             _nextDistantKnock = Time.time + 8f;
@@ -134,12 +184,29 @@ namespace NinetyNine
                     pair.Value.cutoffFrequency = Mathf.Lerp(15000f, 780f, _doorSeal);
                 }
             }
+            for (int i = _outsideFilters.Count - 1; i >= 0; i--)
+            {
+                AudioLowPassFilter filter = _outsideFilters[i];
+                if (filter == null)
+                {
+                    _outsideFilters.RemoveAt(i);
+                    continue;
+                }
+                filter.cutoffFrequency = Mathf.Lerp(15000f, 680f, _doorSeal);
+            }
+        }
+
+        public void SetPowerState(float power01, bool critical, float tension)
+        {
+            _power01 = Mathf.Clamp01(power01);
+            _criticalPower = critical;
+            _tension = Mathf.Clamp01(tension);
         }
 
         public void PlayDoor()
         {
             _doorSource.pitch = RandomRange(0.96f, 1.03f);
-            _doorSource.PlayOneShot(_doorClip, 0.88f);
+            _doorSource.PlayOneShot(RandomClip(_doorVariants), 0.88f);
         }
 
         public void PlayBrake()
@@ -219,6 +286,9 @@ namespace NinetyNine
             source.minDistance = 1f;
             source.maxDistance = 18f;
             source.volume = 0.72f;
+            AudioLowPassFilter filter = phone.AddComponent<AudioLowPassFilter>();
+            filter.cutoffFrequency = Mathf.Lerp(15000f, 680f, _doorSeal);
+            _outsideFilters.Add(filter);
             source.Play();
         }
 
@@ -246,12 +316,19 @@ namespace NinetyNine
             float exhaustion = 1f - _player.Stamina01;
             _breathing.volume = Mathf.Lerp(0f, 0.78f, Mathf.InverseLerp(0.38f, 0.94f, exhaustion));
             _breathing.pitch = Mathf.Lerp(0.82f, 1.35f, exhaustion);
+            _heartbeat.volume = Mathf.MoveTowards(_heartbeat.volume,
+                Mathf.Lerp(0f, 0.58f, Mathf.Max(_tension, exhaustion * 0.8f)),
+                Time.deltaTime * 0.8f);
+            _heartbeat.pitch = Mathf.Lerp(0.82f, 1.28f, Mathf.Max(_tension, exhaustion));
+            float relayTarget = _criticalPower ? 0.42f : Mathf.InverseLerp(0.35f, 0.08f, _power01) * 0.2f;
+            _lowPowerAlarm.volume = Mathf.MoveTowards(_lowPowerAlarm.volume, relayTarget,
+                Time.deltaTime * 0.5f);
 
             if (_travelling && Time.time >= _nextRailTime)
             {
                 _nextRailTime = Time.time + RandomRange(0.82f, 1.28f);
                 _oneShot.pitch = RandomRange(0.86f, 1.06f);
-                _oneShot.PlayOneShot(_railClip, 0.42f);
+                _oneShot.PlayOneShot(RandomClip(_railVariants), 0.42f);
             }
 
             if (_player.MovementAmount > 0.2f && Time.time >= _nextStepTime)
@@ -259,8 +336,8 @@ namespace NinetyNine
                 float pace = _player.IsSprinting ? 0.29f : 0.48f;
                 _nextStepTime = Time.time + pace;
                 _oneShot.pitch = RandomRange(0.88f, 1.08f);
-                AudioClip step = _surfaceIndex == 1 ? _metalStepClip :
-                    _surfaceIndex == 2 ? _wetStepClip : _stepClip;
+                AudioClip step = _surfaceIndex == 1 ? RandomClip(_metalStepVariants) :
+                    _surfaceIndex == 2 ? RandomClip(_wetStepVariants) : RandomClip(_stepVariants);
                 _oneShot.PlayOneShot(step, _player.IsSprinting ? 0.7f : 0.4f);
             }
             if (!_travelling && Time.time >= _nextDistantKnock)
@@ -288,6 +365,12 @@ namespace NinetyNine
         private float RandomRange(float min, float max)
         {
             return Mathf.Lerp(min, max, (float)_random.NextDouble());
+        }
+
+        private AudioClip RandomClip(AudioClip[] values)
+        {
+            if (values == null || values.Length == 0) return null;
+            return values[_random.Next(0, values.Length)];
         }
 
         private AudioSource CreateSource(string sourceName, bool spatial, bool loop, float volume)
@@ -365,6 +448,43 @@ namespace NinetyNine
                 samples[i] = filtered * envelope * 0.62f;
             }
             AudioClip clip = AudioClip.Create("Exhausted Breathing", samples.Length, 1, rate, false);
+            clip.SetData(samples, 0);
+            return clip;
+        }
+
+        private static AudioClip CreateHeartbeat()
+        {
+            const int rate = 22050;
+            const float duration = 1.2f;
+            int count = Mathf.CeilToInt(rate * duration);
+            float[] samples = new float[count];
+            for (int i = 0; i < count; i++)
+            {
+                float time = i / (float)rate;
+                float first = Mathf.Exp(-Mathf.Pow((time - 0.08f) * 24f, 2f));
+                float second = Mathf.Exp(-Mathf.Pow((time - 0.24f) * 30f, 2f));
+                samples[i] = (first * 0.78f + second * 0.48f) * Mathf.Sin(time * 54f);
+            }
+            AudioClip clip = AudioClip.Create("Heartbeat", count, 1, rate, false);
+            clip.SetData(samples, 0);
+            return clip;
+        }
+
+        private static AudioClip CreateLowPowerRelay()
+        {
+            const int rate = 22050;
+            const float duration = 1.6f;
+            int count = Mathf.CeilToInt(rate * duration);
+            float[] samples = new float[count];
+            for (int i = 0; i < count; i++)
+            {
+                float time = i / (float)rate;
+                float pulse = Mathf.Exp(-Mathf.Pow((time - 0.08f) * 30f, 2f));
+                float click = Mathf.Sin(time * 780f) * pulse * 0.34f;
+                float hum = Mathf.Sin(time * 96f) * 0.045f;
+                samples[i] = click + hum;
+            }
+            AudioClip clip = AudioClip.Create("Low Power Relay", count, 1, rate, false);
             clip.SetData(samples, 0);
             return clip;
         }
