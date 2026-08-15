@@ -133,7 +133,7 @@ GameObject:
   - component: {fileID: 1215924913}
   - component: {fileID: 1215924912}
   m_Layer: 0
-  m_Name: NinetyNineGame
+  m_Name: NinetyNineEvacuationGame
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

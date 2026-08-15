@@ -32,6 +32,8 @@ namespace NinetyNine
 
         private readonly Queue<SubtitleLine> _subtitleQueue = new Queue<SubtitleLine>();
         private Texture2D _storyAtlas;
+        private Texture2D _panelSkin;
+        private Texture2D _buttonSkin;
         private Font _font;
         private GUIStyle _eyebrowStyle;
         private GUIStyle _titleStyle;
@@ -57,10 +59,12 @@ namespace NinetyNine
 
         public bool PrologueActive => _prologueActive;
 
-        public void Initialize(Texture2D storyAtlas, Font font, Action beginAction,
-            Action settingsAction, Action quitAction)
+        public void Initialize(Texture2D storyAtlas, Texture2D panelSkin, Texture2D buttonSkin,
+            Font font, Action beginAction, Action settingsAction, Action quitAction)
         {
             _storyAtlas = storyAtlas;
+            _panelSkin = panelSkin;
+            _buttonSkin = buttonSkin;
             _font = font;
             _beginAction = beginAction;
             _settingsAction = settingsAction;
@@ -215,8 +219,9 @@ namespace NinetyNine
             DrawAtlasCell(2, ZoomedScreenRect(zoom), Color.white);
             DrawTint(new Rect(0f, 0f, Screen.width, Screen.height),
                 new Color(0.002f, 0.006f, 0.007f, 0.48f));
-            DrawTint(new Rect(0f, 0f, Screen.width * 0.52f, Screen.height),
-                new Color(0.002f, 0.004f, 0.005f, 0.85f));
+            DrawPanelPlate(new Rect(Screen.width * 0.046f, Screen.height * 0.11f,
+                Screen.width * 0.44f, Screen.height * 0.78f),
+                new Color(0.58f, 0.67f, 0.62f, 0.88f));
             DrawTint(new Rect(Screen.width * 0.062f, Screen.height * 0.17f,
                 4f * scale, Screen.height * 0.66f), new Color(0.08f, 0.82f, 0.72f, 0.94f));
 
@@ -273,7 +278,7 @@ namespace NinetyNine
                 Mathf.Clamp01((_activeSubtitle.Duration - elapsed) / 0.35f));
             Rect panel = new Rect(Screen.width * 0.21f, Screen.height * 0.79f,
                 Screen.width * 0.58f, 92f * scale);
-            DrawTint(panel, new Color(0.002f, 0.006f, 0.006f, 0.84f * alpha));
+            DrawPanelPlate(panel, new Color(0.68f, 0.72f, 0.68f, 0.9f * alpha));
             DrawTint(new Rect(panel.x, panel.y, 4f * scale, panel.height),
                 new Color(_activeSubtitle.Accent.r, _activeSubtitle.Accent.g,
                     _activeSubtitle.Accent.b, 0.94f * alpha));
@@ -363,18 +368,32 @@ namespace NinetyNine
                 alignment = TextAnchor.MiddleLeft,
                 padding = new RectOffset(28, 12, 0, 0)
             };
-            Texture2D normal = MakeTexture(color);
-            Texture2D hover = MakeTexture(new Color(color.r + 0.07f, color.g + 0.1f,
-                color.b + 0.09f, color.a));
-            Texture2D active = MakeTexture(new Color(color.r, color.g + 0.16f,
-                color.b + 0.12f, color.a));
+            Texture2D normal = _buttonSkin != null ? _buttonSkin : MakeTexture(color);
+            Texture2D hover = _buttonSkin != null ? _buttonSkin : MakeTexture(new Color(
+                color.r + 0.07f, color.g + 0.1f, color.b + 0.09f, color.a));
+            Texture2D active = _buttonSkin != null ? _buttonSkin : MakeTexture(new Color(
+                color.r, color.g + 0.16f, color.b + 0.12f, color.a));
             style.normal.background = normal;
             style.hover.background = hover;
             style.active.background = active;
-            style.normal.textColor = new Color(0.88f, 0.95f, 0.92f);
-            style.hover.textColor = Color.white;
+            style.normal.textColor = color.g > 0.3f
+                ? new Color(0.16f, 0.96f, 0.76f) : new Color(0.82f, 0.88f, 0.84f);
+            style.hover.textColor = new Color(1f, 0.7f, 0.24f);
             style.active.textColor = Color.white;
             return style;
+        }
+
+        private void DrawPanelPlate(Rect rect, Color tint)
+        {
+            if (_panelSkin == null)
+            {
+                DrawTint(rect, new Color(0.002f, 0.006f, 0.006f, tint.a));
+                return;
+            }
+            Color old = GUI.color;
+            GUI.color = tint;
+            GUI.DrawTexture(rect, _panelSkin, ScaleMode.StretchToFill);
+            GUI.color = old;
         }
 
         private static Texture2D MakeTexture(Color color)

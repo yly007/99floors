@@ -65,6 +65,8 @@ namespace NinetyNine
         private EvacuationNpc _dialogueNpc;
         private EvacuationInteractable _focus;
         private Texture2D _panelTexture;
+        private Texture2D _uiPanelSkin;
+        private Texture2D _uiButtonSkin;
         private Font _font;
         private GUIStyle _headingStyle;
         private GUIStyle _bodyStyle;
@@ -145,6 +147,8 @@ namespace NinetyNine
             QualitySettings.vSyncCount = 1;
             RunSeed = unchecked(Environment.TickCount * 397) ^ DateTime.Now.Millisecond;
             _panelTexture = MakeTexture(new Color(0.004f, 0.009f, 0.01f, 0.94f));
+            _uiPanelSkin = Resources.Load<Texture2D>("Art/horror_ui_panel_plate_v1");
+            _uiButtonSkin = Resources.Load<Texture2D>("Art/horror_ui_button_plate_v1");
             _font = CreateGameFont();
             _floorDirector = new EvacuationFloorDirector();
             _story = new EvacuationStorySystem();
@@ -153,8 +157,8 @@ namespace NinetyNine
             _world.Initialize(this, _audio);
             _player = _world.Player;
             _narrative = gameObject.AddComponent<EvacuationNarrativeUI>();
-            _narrative.Initialize(Resources.Load<Texture2D>("Art/opening_story_atlas_v1"), _font,
-                StartPrologue, OpenTitleSettings, ExitFromTitle);
+            _narrative.Initialize(Resources.Load<Texture2D>("Art/opening_story_atlas_v1"),
+                _uiPanelSkin, _uiButtonSkin, _font, StartPrologue, OpenTitleSettings, ExitFromTitle);
             BuildResolutionList();
             LoadPlayerSettings();
             ShowTitle();
@@ -2281,10 +2285,13 @@ namespace NinetyNine
 
         private void DrawPanel(Rect rect, Color accent)
         {
-            GUI.DrawTexture(rect, _panelTexture);
             Color old = GUI.color;
+            GUI.color = Color.Lerp(new Color(0.82f, 0.84f, 0.82f, 0.94f), accent, 0.13f);
+            GUI.DrawTexture(rect, _uiPanelSkin != null ? _uiPanelSkin : _panelTexture,
+                ScaleMode.StretchToFill);
             GUI.color = accent;
-            GUI.DrawTexture(new Rect(rect.x, rect.y, 3f, rect.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(rect.x + 4f, rect.y + 4f, 3f,
+                Mathf.Max(0f, rect.height - 8f)), Texture2D.whiteTexture);
             GUI.color = old;
         }
 
@@ -2312,6 +2319,19 @@ namespace NinetyNine
                 new Color(0.9f, 0.97f, 0.95f));
             GUI.skin.button.font = _font;
             GUI.skin.button.fontSize = 16;
+            GUI.skin.button.fontStyle = FontStyle.Normal;
+            GUI.skin.button.alignment = TextAnchor.MiddleCenter;
+            if (_uiButtonSkin != null)
+            {
+                GUI.skin.button.normal.background = _uiButtonSkin;
+                GUI.skin.button.hover.background = _uiButtonSkin;
+                GUI.skin.button.active.background = _uiButtonSkin;
+                GUI.skin.button.focused.background = _uiButtonSkin;
+            }
+            GUI.skin.button.normal.textColor = new Color(0.76f, 0.84f, 0.8f);
+            GUI.skin.button.hover.textColor = new Color(0.12f, 0.95f, 0.74f);
+            GUI.skin.button.active.textColor = new Color(1f, 0.62f, 0.2f);
+            GUI.skin.button.padding = new RectOffset(14, 14, 5, 5);
         }
 
         private GUIStyle NewStyle(FontStyle style, TextAnchor anchor, Color color)

@@ -110,7 +110,6 @@ namespace NinetyNineEditor
                 return;
             }
 
-            ConfigureTexture("Assets/Resources/Art/title_hall.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/brass_tile.png", true, 1024);
             ConfigureTexture("Assets/Resources/Art/modular_surface_atlas.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/anomaly_decal_atlas.png", false, 2048);
@@ -119,6 +118,8 @@ namespace NinetyNineEditor
             ConfigureTexture("Assets/Resources/Art/elevator_control_atlas_v3.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/horror_particle_atlas_v1.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/opening_story_atlas_v1.png", false, 2048);
+            ConfigureTexture("Assets/Resources/Art/horror_ui_panel_plate_v1.png", false, 2048);
+            ConfigureTexture("Assets/Resources/Art/horror_ui_button_plate_v1.png", false, 2048);
 
             bool sceneExists = AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath) != null;
             if (!sceneExists)
@@ -152,7 +153,7 @@ namespace NinetyNineEditor
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             scene.name = "Main";
-            GameObject bootstrap = new GameObject("NinetyNineGame");
+            GameObject bootstrap = new GameObject("NinetyNineEvacuationGame");
             bootstrap.AddComponent<NinetyNineEvacuationGame>();
 
             EditorSceneManager.MarkSceneDirty(scene);
