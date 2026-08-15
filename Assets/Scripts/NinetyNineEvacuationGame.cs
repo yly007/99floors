@@ -129,6 +129,7 @@ namespace NinetyNine
         private string _endingBody = string.Empty;
         private string _endingDebrief = string.Empty;
         private string _powerNoticeText = string.Empty;
+        private string _powerNoticeDeltaText = string.Empty;
         private string _cachedHudFloorText = "99";
         private string _cachedHudPowerText = "16 / 30";
         private string _cachedHudTimeText = "20:00";
@@ -654,6 +655,7 @@ namespace NinetyNine
             _lastPowerNoticeBucket = Mathf.CeilToInt(_power);
             _powerNoticeUntil = 0f;
             _powerNoticeText = string.Empty;
+            _powerNoticeDeltaText = string.Empty;
 
             float observedMaxSpeed = 0f;
             bool observedOpeningAnimation = false;
@@ -967,6 +969,7 @@ namespace NinetyNine
             _lastPowerNoticeBucket = Mathf.CeilToInt(_power);
             _powerNoticeUntil = 0f;
             _powerNoticeText = string.Empty;
+            _powerNoticeDeltaText = string.Empty;
             _remainingTime = RunDuration;
             _health = 100f;
             _doorIntegrity = MaxDoorIntegrity;
@@ -2106,8 +2109,9 @@ namespace NinetyNine
                 : displayedDelta.ToString("0.#");
             _powerNoticeText = reason + "  " + sign + value +
                 "    当前 " + currentBucket + " / " + Mathf.CeilToInt(MaxPower);
+            _powerNoticeDeltaText = sign + value;
             _powerNoticeUntil = Time.unscaledTime + (continuous ? 1.05f : 1.7f);
-            if (_audio != null) _audio.PlayPowerTick(_powerNoticePositive);
+            if (_audio != null && _powerNoticePositive) _audio.PlayPowerTick(true);
         }
 
         public void ShowTransientMessage(string value, float duration)
@@ -2187,6 +2191,16 @@ namespace NinetyNine
                 _cachedHudPowerText, powerColor);
             DrawBar(new Rect(powerCard.x + 14f * scale, powerCard.yMax - 9f * scale,
                 powerCard.width - 28f * scale, 4f * scale), _power / MaxPower, powerColor);
+            if (Time.unscaledTime < _powerNoticeUntil && !string.IsNullOrEmpty(_powerNoticeDeltaText))
+            {
+                Color old = GUI.color;
+                GUI.color = _powerNoticePositive
+                    ? new Color(0.08f, 0.9f, 0.66f, 0.82f)
+                    : new Color(1f, 0.44f, 0.08f, 0.78f);
+                GUI.Label(new Rect(powerCard.xMax - 70f * scale, powerCard.y + 2f * scale,
+                    56f * scale, 22f * scale), _powerNoticeDeltaText, _smallStyle);
+                GUI.color = old;
+            }
             DrawTelemetryCard(timeCard, "剩余时间",
                 _cachedHudTimeText, new Color(1f, 0.44f, 0.08f));
 
@@ -2199,20 +2213,6 @@ namespace NinetyNine
                     : new Color(0.08f, 0.82f, 0.72f);
             DrawPanel(statusCard, statusColor);
             GUI.Label(statusCard, CurrentElevatorStatus(), _centerStyle);
-
-            if (Time.unscaledTime < _powerNoticeUntil && !string.IsNullOrEmpty(_powerNoticeText))
-            {
-                Color noticeColor = _powerNoticePositive
-                    ? new Color(0.08f, 0.9f, 0.66f)
-                    : new Color(1f, 0.18f, 0.04f);
-                Rect powerNotice = new Rect(Screen.width * 0.5f - 205f * scale, 120f * scale,
-                    410f * scale, 32f * scale);
-                DrawPanel(powerNotice, noticeColor);
-                Color old = GUI.color;
-                GUI.color = noticeColor;
-                GUI.Label(powerNotice, _powerNoticeText, _centerStyle);
-                GUI.color = old;
-            }
 
             float left = 24f * scale;
             float resourceY = Screen.height - 44f * scale;
@@ -2378,7 +2378,7 @@ namespace NinetyNine
                 return;
             }
 
-            float y = Time.unscaledTime < _powerNoticeUntil ? 162f * scale : 122f * scale;
+            float y = 122f * scale;
             if (_power <= LowPowerWarning)
             {
                 bool critical = _power <= CriticalPowerWarning;
