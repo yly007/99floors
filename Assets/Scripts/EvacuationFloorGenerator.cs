@@ -17,6 +17,7 @@ namespace NinetyNine
     public sealed class EvacuationFloorGenerator : MonoBehaviour
     {
         private readonly List<Light> _floorLights = new List<Light>();
+        private readonly List<Light> _cabinLights = new List<Light>();
         private readonly Dictionary<EvacuationAction, Renderer> _controlIndicators =
             new Dictionary<EvacuationAction, Renderer>();
         private NinetyNineEvacuationGame _game;
@@ -29,7 +30,6 @@ namespace NinetyNine
         private Transform _rightDoor;
         private GameObject _barrier;
         private TextMesh _floorDisplay;
-        private Light _cabinLight;
         private Light _flashlight;
         private Material _black;
         private Material _metal;
@@ -48,7 +48,9 @@ namespace NinetyNine
         private Material _redGlow;
         private Material _cyanGlow;
         private Material _amberGlow;
+        private Material _cabinLampGlow;
         private Material _glass;
+        private Font _worldFont;
         private float _doorSeal;
         private EvacuationMonster _monster;
 
@@ -290,11 +292,33 @@ namespace NinetyNine
             _flashlight.intensity = Mathf.Lerp(2.7f, 5.2f, Mathf.Clamp01(charge / 35f));
         }
 
-        public void SetCabinLight(bool enabled)
+        public void SetCabinLighting(float power01, bool lowPower, bool criticalPower, bool threatFlicker)
         {
-            if (_cabinLight != null)
+            float energy = Mathf.Clamp01(power01);
+            float flickerNoise = Mathf.PerlinNoise(Time.time * (threatFlicker ? 15f : 9f), 0.417f);
+            bool flickerOff = threatFlicker
+                ? flickerNoise < 0.48f
+                : criticalPower ? flickerNoise < 0.34f : lowPower && flickerNoise < 0.1f;
+            float intensity = Mathf.Lerp(1.4f, 6.2f, Mathf.SmoothStep(0f, 1f, energy));
+            if (lowPower) intensity *= criticalPower ? 0.7f : 0.82f;
+            if (flickerOff) intensity *= 0.18f;
+            Color lightColor = Color.Lerp(new Color(1f, 0.42f, 0.12f),
+                new Color(1f, 0.78f, 0.52f), Mathf.Clamp01(energy * 2f));
+
+            for (int i = 0; i < _cabinLights.Count; i++)
             {
-                _cabinLight.enabled = enabled;
+                Light cabinLight = _cabinLights[i];
+                if (cabinLight == null) continue;
+                cabinLight.enabled = energy > 0.001f;
+                cabinLight.intensity = intensity;
+                cabinLight.color = lightColor;
+            }
+            if (_cabinLampGlow != null)
+            {
+                Color panelColor = flickerOff ? new Color(0.025f, 0.012f, 0.004f) : lightColor;
+                _cabinLampGlow.color = panelColor;
+                _cabinLampGlow.EnableKeyword("_EMISSION");
+                _cabinLampGlow.SetColor("_EmissionColor", panelColor * (criticalPower ? 1.25f : 2.8f));
             }
         }
 
@@ -310,11 +334,16 @@ namespace NinetyNine
             {
                 return;
             }
+            Color activeColor = action == EvacuationAction.Stop
+                ? new Color(1f, 0.06f, 0.025f)
+                : action == EvacuationAction.Door || action == EvacuationAction.FusePanel
+                    ? new Color(1f, 0.45f, 0.055f)
+                    : new Color(0.06f, 1f, 0.65f);
             Color color = danger ? new Color(1f, 0.03f, 0.01f) :
-                active ? new Color(0.06f, 1f, 0.65f) : new Color(0.025f, 0.12f, 0.11f);
-            renderer.material.color = color;
-            renderer.material.EnableKeyword("_EMISSION");
-            renderer.material.SetColor("_EmissionColor", color * 3.4f);
+                active ? activeColor : activeColor * 0.16f;
+            renderer.sharedMaterial.color = color;
+            renderer.sharedMaterial.EnableKeyword("_EMISSION");
+            renderer.sharedMaterial.SetColor("_EmissionColor", color * 3.4f);
         }
 
         public void RemoveMonster(EvacuationMonster monster)
@@ -360,7 +389,16 @@ namespace NinetyNine
             _redGlow = MakeEmissive("Emergency Red", new Color(0.88f, 0.018f, 0.008f), 5f);
             _cyanGlow = MakeEmissive("Cold Cyan", new Color(0.08f, 0.92f, 0.78f), 3.4f);
             _amberGlow = MakeEmissive("Sodium Amber", new Color(1f, 0.42f, 0.055f), 3.2f);
+            _cabinLampGlow = MakeEmissive("Warm Cabin Lamp", new Color(1f, 0.78f, 0.52f), 3.2f);
             _glass = MakeTransparent("Flood Water", new Color(0.025f, 0.22f, 0.25f, 0.34f));
+            _worldFont = Font.CreateDynamicFontFromOSFont(new[]
+            {
+                "Microsoft YaHei", "Microsoft YaHei UI", "PingFang SC", "Heiti SC", "SimHei", "Arial"
+            }, 80);
+            if (_worldFont != null)
+            {
+                _worldFont.RequestCharactersInTexture("下降停止门控电池槽保险丝", 80, FontStyle.Bold);
+            }
         }
 
         private void BuildCabin()
@@ -380,27 +418,52 @@ namespace NinetyNine
             _leftDoor = Box("LeftDoor", new Vector3(-0.74f, 1.48f, 2.24f), new Vector3(1.46f, 2.78f, 0.11f), _doorMetal, _cabin);
             _rightDoor = Box("RightDoor", new Vector3(0.74f, 1.48f, 2.24f), new Vector3(1.46f, 2.78f, 0.11f), _doorMetal, _cabin);
 
-            CreateControl("DESCEND", "启动下降（必须先关门）", EvacuationAction.Descend,
-                new Vector3(-2.19f, 1.55f, 0.55f), Quaternion.Euler(0f, -90f, 0f), _cyanGlow);
-            CreateControl("STOP / BRAKE", "立即停车", EvacuationAction.Stop,
-                new Vector3(2.19f, 1.78f, -0.3f), Quaternion.Euler(0f, 90f, 0f), _amberGlow);
-            CreateControl("DOOR CONTROL", "开 / 关电梯门", EvacuationAction.Door,
-                new Vector3(2.19f, 1.12f, 0.82f), Quaternion.Euler(0f, 90f, 0f), _redGlow);
-            CreateControl("BATTERY RACK", "安装电池", EvacuationAction.BatterySlot,
-                new Vector3(-1.25f, 1.25f, -2.19f), Quaternion.Euler(0f, 180f, 0f), _cyanGlow);
-            CreateControl("FUSE PANEL", "安装保险丝", EvacuationAction.FusePanel,
-                new Vector3(1.25f, 1.25f, -2.19f), Quaternion.Euler(0f, 180f, 0f), _amberGlow);
+            Box("BackHandrail", new Vector3(0f, 1.02f, -2.18f),
+                new Vector3(3.72f, 0.07f, 0.08f), _brass, _cabin, false);
+            Box("LeftHandrail", new Vector3(-2.18f, 1.02f, -0.35f),
+                new Vector3(0.08f, 0.07f, 3.4f), _brass, _cabin, false);
+            CreateCabinLamp("RearCabinLamp", -1.05f);
+            CreateCabinLamp("FrontCabinLamp", 1.02f);
+            CreateControlConsole();
 
             CreateDoorHeaderDisplay();
-
-            _cabinLight = CreateLight("Cabin Light", new Vector3(0f, 2.85f, -0.25f),
-                new Color(0.72f, 0.83f, 0.88f), 3.8f, 7f, _cabin);
-            _cabinLight.shadows = LightShadows.Soft;
             _barrier = new GameObject("TravelBarrier");
             _barrier.transform.SetParent(_root, false);
             _barrier.transform.position = new Vector3(0f, 1.5f, 2.36f);
             BoxCollider barrierCollider = _barrier.AddComponent<BoxCollider>();
             barrierCollider.size = new Vector3(3.1f, 3f, 0.14f);
+        }
+
+        private void CreateCabinLamp(string name, float z)
+        {
+            Box(name + "Housing", new Vector3(0f, 3.105f, z),
+                new Vector3(2.7f, 0.07f, 0.72f), _metal, _cabin, false);
+            Box(name + "Diffuser", new Vector3(0f, 3.06f, z),
+                new Vector3(2.42f, 0.025f, 0.54f), _cabinLampGlow, _cabin, false);
+            Light light = CreateLight(name + "Light", new Vector3(0f, 2.72f, z),
+                new Color(1f, 0.78f, 0.52f), 4.8f, 5.2f, _cabin);
+            light.shadows = _cabinLights.Count == 0 ? LightShadows.Soft : LightShadows.None;
+            _cabinLights.Add(light);
+        }
+
+        private void CreateControlConsole()
+        {
+            Box("ControlConsoleBack", new Vector3(2.225f, 1.4f, 0.72f),
+                new Vector3(0.09f, 2.55f, 1.08f), _metal, _cabin, false);
+            Box("ControlConsoleTop", new Vector3(2.16f, 2.68f, 0.72f),
+                new Vector3(0.08f, 0.035f, 1.08f), _brass, _cabin, false);
+            Box("ControlConsoleEdge", new Vector3(2.16f, 1.4f, 0.18f),
+                new Vector3(0.08f, 2.55f, 0.035f), _brass, _cabin, false);
+            CreateControl("下降", "启动下降（必须先关门）", EvacuationAction.Descend,
+                new Vector3(2.16f, 2.34f, 0.72f), _cyanGlow);
+            CreateControl("停止", "立即停车", EvacuationAction.Stop,
+                new Vector3(2.16f, 1.86f, 0.72f), _redGlow);
+            CreateControl("门控", "开 / 关电梯门", EvacuationAction.Door,
+                new Vector3(2.16f, 1.38f, 0.72f), _amberGlow);
+            CreateControl("电池槽", "安装电池", EvacuationAction.BatterySlot,
+                new Vector3(2.16f, 0.9f, 0.72f), _cyanGlow);
+            CreateControl("保险丝", "安装保险丝", EvacuationAction.FusePanel,
+                new Vector3(2.16f, 0.42f, 0.72f), _amberGlow);
         }
 
         private void CreateDoorHeaderDisplay()
@@ -777,21 +840,57 @@ namespace NinetyNine
             Sphere("Head", new Vector3(0f, 1.78f, 0f), new Vector3(0.31f, 0.38f, 0.3f), _black, root, false);
         }
 
-        private void CreateControl(string objectName, string label, EvacuationAction action,
-            Vector3 position, Quaternion rotation, Material glow)
+        private void CreateControl(string displayName, string label, EvacuationAction action,
+            Vector3 position, Material glow)
         {
-            Transform root = new GameObject(objectName).transform;
+            Transform root = new GameObject(action + "Control").transform;
             root.SetParent(_cabin, false);
             root.localPosition = position;
-            root.localRotation = rotation;
-            Transform panel = Box("Surface", Vector3.zero, new Vector3(0.72f, 0.62f, 0.09f), _metal, root);
+            root.localRotation = Quaternion.Euler(0f, 90f, 0f);
+            Transform panel = Box("Surface", Vector3.zero, new Vector3(0.82f, 0.4f, 0.09f), _metal, root);
             EvacuationInteractable interactable = panel.gameObject.AddComponent<EvacuationInteractable>();
             interactable.Configure(action, label);
-            Transform indicator = Box("Indicator", new Vector3(0f, 0.18f, -0.065f),
-                new Vector3(0.28f, 0.08f, 0.025f), new Material(glow), root, false);
+            Transform indicator = CreateControlIndicator(action, root, glow);
             _controlIndicators[action] = indicator.GetComponent<Renderer>();
-            CreateText("Label", root, objectName, 0.0065f, new Color(0.72f, 0.82f, 0.78f),
-                new Vector3(0f, -0.12f, -0.066f));
+            CreateText("Label", root, displayName, 0.0058f, new Color(0.84f, 0.89f, 0.86f),
+                new Vector3(0f, -0.105f, -0.13f)).fontStyle = FontStyle.Bold;
+        }
+
+        private Transform CreateControlIndicator(EvacuationAction action, Transform root, Material glow)
+        {
+            Material indicatorMaterial = new Material(glow);
+            if (action == EvacuationAction.Stop)
+            {
+                return Cylinder("EmergencyStop", new Vector3(0f, 0.085f, -0.09f),
+                    new Vector3(0.13f, 0.045f, 0.13f), indicatorMaterial, root, false,
+                    new Vector3(90f, 0f, 0f));
+            }
+            if (action == EvacuationAction.Door)
+            {
+                Box("DoorArrowRight", new Vector3(0.13f, 0.085f, -0.078f),
+                    new Vector3(0.13f, 0.13f, 0.035f), indicatorMaterial, root, false);
+                return Box("DoorArrowLeft", new Vector3(-0.13f, 0.085f, -0.078f),
+                    new Vector3(0.13f, 0.13f, 0.035f), indicatorMaterial, root, false);
+            }
+            if (action == EvacuationAction.BatterySlot)
+            {
+                Box("BatteryRecess", new Vector3(0f, 0.085f, -0.074f),
+                    new Vector3(0.38f, 0.12f, 0.025f), _black, root, false);
+                return Box("BatteryContact", new Vector3(0f, 0.085f, -0.092f),
+                    new Vector3(0.28f, 0.045f, 0.018f), indicatorMaterial, root, false);
+            }
+            if (action == EvacuationAction.FusePanel)
+            {
+                Transform hatch = Box("FuseHatch", new Vector3(0f, 0.085f, -0.078f),
+                    new Vector3(0.3f, 0.15f, 0.035f), indicatorMaterial, root, false);
+                Box("FuseLatch", new Vector3(0.105f, 0.085f, -0.102f),
+                    new Vector3(0.035f, 0.07f, 0.018f), _redGlow, root, false);
+                return hatch;
+            }
+            Box("DescentStem", new Vector3(0f, 0.105f, -0.08f),
+                new Vector3(0.055f, 0.12f, 0.035f), indicatorMaterial, root, false);
+            return Box("DescentArrow", new Vector3(0f, 0.045f, -0.088f),
+                new Vector3(0.22f, 0.065f, 0.04f), indicatorMaterial, root, false);
         }
 
         private void ClearFloor()
@@ -1063,7 +1162,7 @@ namespace NinetyNine
             return light;
         }
 
-        private static TextMesh CreateText(string name, Transform parent, string value,
+        private TextMesh CreateText(string name, Transform parent, string value,
             float characterSize, Color color, Vector3 position = default(Vector3))
         {
             GameObject textObject = new GameObject(name);
@@ -1071,13 +1170,13 @@ namespace NinetyNine
             textObject.transform.localPosition = position == Vector3.zero ? new Vector3(0f, 0f, -0.57f) : position;
             textObject.transform.localRotation = Quaternion.identity;
             TextMesh text = textObject.AddComponent<TextMesh>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.font = _worldFont != null ? _worldFont : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             text.fontSize = 80;
             text.characterSize = characterSize;
             text.anchor = TextAnchor.MiddleCenter;
             text.alignment = TextAlignment.Center;
             text.color = color;
-            textObject.GetComponent<MeshRenderer>().material = text.font.material;
+            textObject.GetComponent<MeshRenderer>().sharedMaterial = text.font.material;
             return text;
         }
     }

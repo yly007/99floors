@@ -95,8 +95,12 @@ namespace NinetyNine
 
         public string Question(out string clueId)
         {
+            bool firstQuestion = !_questioned;
             _questioned = true;
-            Trust += IsMimic ? 0 : 1;
+            if (firstQuestion && !IsMimic)
+            {
+                Trust++;
+            }
             clueId = IsMimic ? "contradiction_" + DestinationFloor :
                 "witness_" + ((int)Archetype) + "_" + Mathf.Abs(DestinationFloor % 3);
             if (IsMimic)

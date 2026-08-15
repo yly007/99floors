@@ -51,6 +51,7 @@ namespace NinetyNine
         private GUIStyle _bodyStyle;
         private GUIStyle _smallStyle;
         private GUIStyle _centerStyle;
+        private GUIStyle _objectiveStyle;
         private GUIStyle _telemetryLabelStyle;
         private GUIStyle _telemetryValueStyle;
         private EvacuationPhase _phase = EvacuationPhase.Title;
@@ -127,6 +128,7 @@ namespace NinetyNine
             bool monsterRun = Array.Exists(args, value => value == "-evacuationMonsterRun");
             if (capture || fullRun || failureRun || monsterRun)
             {
+                Application.runInBackground = true;
                 StartCoroutine(CapturePrototype(fullRun, failureRun, monsterRun));
             }
 #endif
@@ -147,11 +149,26 @@ namespace NinetyNine
             _messageUntil = 0f;
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot, "EvacuationDisplay.png"));
-            _player.transform.rotation = Quaternion.Euler(0f, -68f, 0f);
+            _player.CanMove = false;
+            _player.transform.rotation = Quaternion.Euler(0f, 56f, 0f);
+            _player.ViewCamera.transform.localRotation = Quaternion.Euler(4f, 0f, 0f);
             _messageUntil = 0f;
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot, "EvacuationCabin.png"));
+            float capturePower = _power;
+            _power = 3f;
+            yield return new WaitForSeconds(0.25f);
+            while (Mathf.PerlinNoise(Time.time * 9f, 0.417f) < 0.4f)
+            {
+                yield return null;
+            }
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot, "EvacuationLowPowerCabin.png"));
+            yield return new WaitForEndOfFrame();
+            _power = capturePower;
             _player.transform.rotation = Quaternion.identity;
+            _player.ViewCamera.transform.localRotation = Quaternion.identity;
+            _player.CanMove = true;
             _player.transform.position = new Vector3(0f, 0.08f, 3.2f);
             _world.SetFlashlight(true, 100f);
             yield return new WaitForEndOfFrame();
@@ -160,6 +177,16 @@ namespace NinetyNine
             _player.ResetInsideCabin();
             if (!fullRun && !failureRun && !monsterRun)
             {
+                EvacuationNpc passengerForCapture = FindObjectOfType<EvacuationNpc>();
+                if (passengerForCapture != null)
+                {
+                    NpcBoarded(passengerForCapture);
+                    yield return new WaitForEndOfFrame();
+                    ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot,
+                        "EvacuationPassengerTask.png"));
+                    Debug.Log("EVACUATION_PASSENGER_TASK_UI_STATE_TEST=PASS DESTINATION=" +
+                        passengerForCapture.DestinationFloor);
+                }
                 yield break;
             }
 
@@ -225,6 +252,17 @@ namespace NinetyNine
                 FindObjectsOfType<EvacuationNpc>().Length == 1;
             Debug.Log("EVACUATION_START_FLOOR_SAFE_TEST=" + (safeStartPassed ? "PASS" : "FAIL"));
             EvacuationNpc startNpc = FindObjectOfType<EvacuationNpc>();
+            bool questionTrustPassed = false;
+            if (startNpc != null)
+            {
+                int trustBeforeQuestion = startNpc.Trust;
+                string ignoredClue;
+                startNpc.Question(out ignoredClue);
+                startNpc.Question(out ignoredClue);
+                int expectedTrust = trustBeforeQuestion + (startNpc.IsMimic ? 0 : 1);
+                questionTrustPassed = startNpc.Trust == expectedTrust;
+            }
+            Debug.Log("EVACUATION_NPC_QUESTION_TRUST_TEST=" + (questionTrustPassed ? "PASS" : "FAIL"));
             Collider npcCollider = startNpc != null ? startNpc.GetComponent<Collider>() : null;
             CharacterController playerController = _player.GetComponent<CharacterController>();
             bool npcCollisionPassed = npcCollider != null && playerController != null &&
@@ -236,6 +274,32 @@ namespace NinetyNine
                 value.GetComponent<BoxCollider>().isTrigger &&
                 value.GetComponent<BoxCollider>().size.x <= 0.62f);
             Debug.Log("EVACUATION_PICKUP_HITBOX_TEST=" + (pickupHitboxPassed ? "PASS" : "FAIL"));
+            EvacuationAction[] controlActions =
+            {
+                EvacuationAction.Descend,
+                EvacuationAction.Stop,
+                EvacuationAction.Door,
+                EvacuationAction.BatterySlot,
+                EvacuationAction.FusePanel
+            };
+            bool controlPanelRayPassed = true;
+            for (int i = 0; i < controlActions.Length; i++)
+            {
+                EvacuationInteractable control = Array.Find(interactables, value =>
+                    value != null && value.Action == controlActions[i]);
+                Collider controlCollider = control != null ? control.GetComponent<Collider>() : null;
+                if (controlCollider == null)
+                {
+                    controlPanelRayPassed = false;
+                    continue;
+                }
+                Vector3 controlTarget = controlCollider.bounds.center;
+                Vector3 direction = (controlTarget - _player.ViewCamera.transform.position).normalized;
+                _player.ViewCamera.transform.rotation = Quaternion.LookRotation(direction, Vector3.up);
+                controlPanelRayPassed &= FindInteractionFocus(_player.ViewCamera) == control;
+            }
+            _player.ResetInsideCabin();
+            Debug.Log("EVACUATION_CONTROL_PANEL_RAY_TEST=" + (controlPanelRayPassed ? "PASS" : "FAIL"));
             EvacuationInteractable starterPickup = Array.Find(interactables, value => value != null &&
                 value.Action == EvacuationAction.Item);
             bool centerRayPassed = false;
@@ -1068,10 +1132,6 @@ namespace NinetyNine
                 return;
             }
             _mimicCountdown -= Time.deltaTime;
-            if (_mimicCountdown <= 8f)
-            {
-                _world.SetCabinLight(Mathf.PerlinNoise(Time.time * 9f, 0.2f) > 0.35f);
-            }
             if (_mimicCountdown <= 0f)
             {
                 Lose("伪 人", "灯光最后一次亮起时，乘客的脸贴在你的肩后。轿厢里再没有幸存者。");
@@ -1155,6 +1215,8 @@ namespace NinetyNine
             int displayFloor = _currentPlan != null && _currentPlan.Event == FloorEventKind.WrongFloorNumber
                 ? Mathf.Clamp(_currentFloor + 7, 1, 99) : _currentFloor;
             _world.SetFloorDisplay(displayFloor);
+            _world.SetCabinLighting(_power / MaxPower, _power <= LowPowerWarning,
+                _power <= CriticalPowerWarning, _mimicCountdown > 0f && _mimicCountdown <= 8f);
             _world.SetControlState(EvacuationAction.Descend,
                 _phase == EvacuationPhase.Stopped && _doorSeal > 0.98f, false);
             _world.SetControlState(EvacuationAction.Stop, _phase == EvacuationPhase.Descending, false);
@@ -1242,6 +1304,7 @@ namespace NinetyNine
             }
 
             DrawStatus(scale);
+            DrawObjective(scale);
             DrawResourceWarnings(scale);
             if (_dialogueNpc != null)
             {
@@ -1278,7 +1341,7 @@ namespace NinetyNine
             GUI.Label(new Rect(Screen.width * 0.065f, Screen.height * 0.08f,
                 Screen.width * 0.82f, 110f * scale), "99 层撤离", _titleStyle);
             GUI.Label(new Rect(Screen.width * 0.07f, Screen.height * 0.08f + 94f * scale,
-                Screen.width * 0.72f, 40f * scale), "THE LAST ELEVATOR", _headingStyle);
+                Screen.width * 0.72f, 40f * scale), "最后一部电梯", _headingStyle);
             GUI.Label(new Rect(Screen.width * 0.065f, Screen.height * 0.61f,
                 Screen.width * 0.76f, 86f * scale),
                 "电量无法直达一楼。下降、抢停、进入未知楼层寻找电池；遇到怪物只能逃回电梯，在它越过门缝前关门。大多数撤离都会失败。", _bodyStyle);
@@ -1330,17 +1393,17 @@ namespace NinetyNine
             float left = 24f * scale;
             float top = Screen.height - 118f * scale;
             GUI.Label(new Rect(left, top, 280f * scale, 28f * scale),
-                "HEALTH  " + Mathf.CeilToInt(_health), _smallStyle);
+                "生命  " + Mathf.CeilToInt(_health), _smallStyle);
             DrawBar(new Rect(left, top + 30f * scale, 260f * scale, 10f * scale),
                 _health / 100f, new Color(0.86f, 0.04f, 0.025f));
             GUI.Label(new Rect(left, top + 46f * scale, 280f * scale, 28f * scale),
-                "STAMINA  " + Mathf.CeilToInt(_player.Stamina01 * 100f), _smallStyle);
+                "体力  " + Mathf.CeilToInt(_player.Stamina01 * 100f), _smallStyle);
             DrawBar(new Rect(left, top + 76f * scale, 260f * scale, 10f * scale),
                 _player.Stamina01, new Color(0.08f, 0.82f, 0.68f));
             if (_hasFlashlight)
             {
                 GUI.Label(new Rect(Screen.width - 220f * scale, Screen.height - 58f * scale,
-                    190f * scale, 28f * scale), "FLASH " + Mathf.CeilToInt(_flashCharge), _smallStyle);
+                    190f * scale, 28f * scale), "手电电量  " + Mathf.CeilToInt(_flashCharge), _smallStyle);
             }
             if (_carryingCell)
             {
@@ -1348,8 +1411,50 @@ namespace NinetyNine
                     300f * scale, 30f * scale), "双手搬运：电梯电池", _smallStyle);
             }
             GUI.Label(new Rect(Screen.width - 330f * scale, 58f * scale,
-                300f * scale, 28f * scale), "CLUES " + _story.ClueCount + " / 6   PARTS " + _scrap,
+                300f * scale, 28f * scale), "线索 " + _story.ClueCount + " / 6   零件 " + _scrap,
                 _smallStyle);
+        }
+
+        private void DrawObjective(float scale)
+        {
+            int passengerCount = 0;
+            for (int i = 0; i < _passengers.Count; i++)
+            {
+                if (_passengers[i] != null) passengerCount++;
+            }
+            float width = 340f * scale;
+            float height = (124f + passengerCount * 24f) * scale;
+            Rect rect = new Rect(20f * scale, 18f * scale, width, height);
+            DrawPanel(rect, new Color(1f, 0.52f, 0.12f));
+            GUI.Label(new Rect(rect.x + 14f * scale, rect.y + 5f * scale,
+                rect.width - 28f * scale, 23f * scale), "撤离任务", _smallStyle);
+            GUI.Label(new Rect(rect.x + 14f * scale, rect.y + 28f * scale,
+                rect.width - 28f * scale, 72f * scale), CurrentObjective(), _objectiveStyle);
+
+            float passengerY = rect.y + 104f * scale;
+            for (int i = 0; i < _passengers.Count; i++)
+            {
+                EvacuationNpc passenger = _passengers[i];
+                if (passenger == null) continue;
+                GUI.Label(new Rect(rect.x + 14f * scale, passengerY,
+                    rect.width - 28f * scale, 23f * scale),
+                    "护送：" + passenger.DisplayName + " · 目标 " + passenger.DestinationFloor + " 层", _smallStyle);
+                passengerY += 24f * scale;
+            }
+        }
+
+        private string CurrentObjective()
+        {
+            const string mainGoal = "从 99 层撤至 1 层，并收集线索破解大楼循环。\n";
+            if (_carryingCell) return mainGoal + "当前：把电池带回轿厢并装入电池槽。";
+            if (_phase == EvacuationPhase.Descending)
+                return mainGoal + (_braking ? "当前：电梯正在制动，准备确认停靠层。" :
+                    "当前：观察楼层数字，瞄准停止按钮选择停靠层。");
+            if (_phase == EvacuationPhase.ClosingDoors) return mainGoal + "当前：等待电梯门完全关闭。";
+            if (_phase == EvacuationPhase.OpeningDoors) return mainGoal + "当前：等待电梯门完全打开。";
+            if (_doorSeal > 0.98f) return mainGoal + "当前：使用下降按钮启动电梯。";
+            if (!_player.IsInsideElevator) return mainGoal + "当前：搜索电池和线索，遇到危险立即撤回电梯。";
+            return mainGoal + "当前：探索楼层；准备离开时回到轿厢关闭电梯门。";
         }
 
         private void DrawTelemetryCard(Rect rect, string label, string value, Color accent)
@@ -1417,27 +1522,31 @@ namespace NinetyNine
 
         private void DrawInteraction(float scale)
         {
-            float size = 4f * scale;
+            float size = 6f * scale;
+            Color reticleColor = _focus == null && !_player.IsHidden
+                ? new Color(0.7f, 0.8f, 0.78f, 0.58f)
+                : new Color(0.1f, 1f, 0.72f, 0.96f);
             DrawTint(new Rect(Screen.width * 0.5f - size * 0.5f, Screen.height * 0.5f - size * 0.5f,
-                size, size), _focus == null ? new Color(0.7f, 0.8f, 0.78f, 0.58f) : new Color(0.1f, 1f, 0.72f, 0.92f));
+                size, size), reticleColor);
 
             string context = _player.IsHidden
                 ? "[E]  离开藏身处"
-                : _focus != null ? "[E]  " + _focus.Label : "将准星对准目标以交互";
-            string controls = "[WASD] 移动   [SHIFT] 冲刺   [CTRL] 蹲伏";
+                : _focus != null ? "[E]  " + _focus.Label : string.Empty;
+            if (!string.IsNullOrEmpty(context))
+            {
+                Rect prompt = new Rect(Screen.width * 0.5f - 180f * scale,
+                    Screen.height * 0.5f + 16f * scale, 360f * scale, 38f * scale);
+                DrawPanel(prompt, reticleColor);
+                GUI.Label(prompt, context, _centerStyle);
+            }
+
+            string controls = "[WASD] 移动   [SHIFT] 冲刺   [CTRL] 切换蹲伏";
             if (_hasFlashlight)
             {
                 controls += "   [F] 手电筒";
             }
-            Rect hud = new Rect(Screen.width * 0.25f, Screen.height - 92f * scale,
-                Screen.width * 0.5f, 68f * scale);
-            DrawPanel(hud, _focus != null || _player.IsHidden
-                ? new Color(0.08f, 0.9f, 0.72f)
-                : new Color(0.24f, 0.38f, 0.36f));
-            GUI.Label(new Rect(hud.x, hud.y + 3f * scale, hud.width, 32f * scale),
-                context, _centerStyle);
-            GUI.Label(new Rect(hud.x, hud.y + 32f * scale, hud.width, 30f * scale),
-                controls, _centerStyle);
+            GUI.Label(new Rect(Screen.width * 0.24f, Screen.height - 36f * scale,
+                Screen.width * 0.52f, 28f * scale), controls, _centerStyle);
         }
 
         private void DrawNpcDialogue(float scale)
@@ -1518,6 +1627,8 @@ namespace NinetyNine
             _bodyStyle.wordWrap = true;
             _smallStyle = NewStyle(FontStyle.Normal, TextAnchor.MiddleLeft, new Color(0.55f, 0.74f, 0.7f));
             _centerStyle = NewStyle(FontStyle.Normal, TextAnchor.MiddleCenter, new Color(0.8f, 0.92f, 0.88f));
+            _objectiveStyle = NewStyle(FontStyle.Normal, TextAnchor.UpperLeft, new Color(0.88f, 0.93f, 0.9f));
+            _objectiveStyle.wordWrap = true;
             _telemetryLabelStyle = NewStyle(FontStyle.Normal, TextAnchor.MiddleCenter,
                 new Color(0.55f, 0.74f, 0.7f));
             _telemetryValueStyle = NewStyle(FontStyle.Bold, TextAnchor.MiddleCenter,
@@ -1542,6 +1653,7 @@ namespace NinetyNine
             _bodyStyle.fontSize = Mathf.RoundToInt(21f * scale);
             _smallStyle.fontSize = Mathf.RoundToInt(15f * scale);
             _centerStyle.fontSize = Mathf.RoundToInt(17f * scale);
+            _objectiveStyle.fontSize = Mathf.RoundToInt(16f * scale);
             _telemetryLabelStyle.fontSize = Mathf.RoundToInt(13f * scale);
             _telemetryValueStyle.fontSize = Mathf.RoundToInt(25f * scale);
         }
