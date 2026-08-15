@@ -39,6 +39,7 @@ namespace NinetyNine
         private GUIStyle _eyebrowStyle;
         private GUIStyle _titleStyle;
         private GUIStyle _taglineStyle;
+        private GUIStyle _titleWarningStyle;
         private GUIStyle _buttonStyle;
         private GUIStyle _primaryButtonStyle;
         private GUIStyle _prologueHeadingStyle;
@@ -228,6 +229,11 @@ namespace NinetyNine
 
         private void DrawTitle(float scale)
         {
+            if (_titleHero != null)
+            {
+                DrawMidnightTitle(scale);
+                return;
+            }
             float zoom = 1.035f + Mathf.Sin(Time.unscaledTime * 0.12f) * 0.008f;
             if (_titleHero != null) GUI.DrawTexture(ZoomedScreenRect(zoom), _titleHero, ScaleMode.ScaleAndCrop);
             else DrawAtlasCell(2, ZoomedScreenRect(zoom), Color.white);
@@ -258,6 +264,53 @@ namespace NinetyNine
                 _quitAction?.Invoke();
             GUI.Label(new Rect(Screen.width * 0.083f, Screen.height * 0.88f,
                 480f * scale, 30f * scale), "ENTER 开始 · ESC 跳过序章", _hintStyle);
+        }
+
+        private void DrawMidnightTitle(float scale)
+        {
+            float zoom = 1.035f + Mathf.Sin(Time.unscaledTime * 0.12f) * 0.008f;
+            GUI.DrawTexture(ZoomedScreenRect(zoom), _titleHero, ScaleMode.ScaleAndCrop);
+            DrawTint(new Rect(0f, 0f, Screen.width, Screen.height),
+                new Color(0.001f, 0.004f, 0.006f, 0.2f));
+            DrawTint(new Rect(0f, 0f, Screen.width * 0.49f, Screen.height),
+                new Color(0f, 0.002f, 0.004f, 0.46f));
+
+            float left = Screen.width * 0.075f;
+            float contentWidth = Mathf.Min(Screen.width * 0.35f, 560f * scale);
+            DrawPanelPlate(new Rect(left - 30f * scale, Screen.height * 0.17f,
+                contentWidth + 56f * scale, Screen.height * 0.64f),
+                new Color(0.16f, 0.2f, 0.19f, 0.53f));
+            DrawTint(new Rect(left - 14f * scale, Screen.height * 0.23f,
+                3f * scale, Screen.height * 0.48f), new Color(0.69f, 0.12f, 0.09f, 0.88f));
+
+            GUI.Label(new Rect(left, Screen.height * 0.245f,
+                contentWidth, 34f * scale), "午夜封锁记录  //  顶层终端 99", _eyebrowStyle);
+            GUI.Label(new Rect(left - 2f * scale, Screen.height * 0.3f,
+                contentWidth + 40f * scale, 112f * scale), "逃离午夜大楼", _titleStyle);
+            GUI.Label(new Rect(left, Screen.height * 0.438f,
+                contentWidth, 76f * scale),
+                "你被困在 99 层。唯一还在运行的电梯，正等着把你带往不该抵达的楼层。", _taglineStyle);
+            GUI.Label(new Rect(left, Screen.height * 0.525f,
+                contentWidth, 26f * scale), "不要相信它停在一楼。", _titleWarningStyle);
+
+            if (GUI.Button(new Rect(left, Screen.height * 0.595f,
+                330f * scale, 58f * scale), "进入电梯", _primaryButtonStyle))
+                _beginAction?.Invoke();
+            if (GUI.Button(new Rect(left, Screen.height * 0.685f,
+                330f * scale, 54f * scale), "调整终端", _buttonStyle))
+                _settingsAction?.Invoke();
+            if (GUI.Button(new Rect(left, Screen.height * 0.77f,
+                330f * scale, 54f * scale), "离开大楼", _buttonStyle))
+                _quitAction?.Invoke();
+            GUI.Label(new Rect(left, Screen.height * 0.865f,
+                contentWidth + 60f * scale, 30f * scale), "ENTER 进入电梯  ·  ESC 跳过序章", _hintStyle);
+
+            float flicker = Mathf.Clamp01((Mathf.Sin(Time.unscaledTime * 1.7f) - 0.955f) / 0.045f);
+            if (flicker > 0f)
+            {
+                DrawTint(new Rect(0f, 0f, Screen.width, Screen.height),
+                    new Color(0.18f, 0.01f, 0.005f, flicker * 0.1f));
+            }
         }
 
         private void DrawPrologue(float scale)
@@ -344,6 +397,8 @@ namespace NinetyNine
             _taglineStyle = NewStyle(25, FontStyle.Normal, TextAnchor.UpperLeft,
                 new Color(0.72f, 0.79f, 0.76f));
             _taglineStyle.wordWrap = true;
+            _titleWarningStyle = NewStyle(19, FontStyle.Bold, TextAnchor.MiddleLeft,
+                new Color(0.88f, 0.23f, 0.16f));
             _prologueHeadingStyle = NewStyle(23, FontStyle.Bold, TextAnchor.UpperLeft,
                 new Color(0.1f, 0.9f, 0.76f));
             _prologueBodyStyle = NewStyle(34, FontStyle.Normal, TextAnchor.UpperLeft,
@@ -357,6 +412,7 @@ namespace NinetyNine
             _subtitleBodyStyle.wordWrap = true;
             _buttonStyle = NewButtonStyle(new Color(0.035f, 0.06f, 0.06f, 0.9f));
             _primaryButtonStyle = NewButtonStyle(new Color(0.055f, 0.48f, 0.41f, 0.92f));
+            _primaryButtonStyle.normal.textColor = new Color(1f, 0.62f, 0.27f);
         }
 
         private GUIStyle NewStyle(int size, FontStyle fontStyle, TextAnchor anchor, Color color)
@@ -431,6 +487,7 @@ namespace NinetyNine
             _eyebrowStyle.fontSize = Mathf.RoundToInt(23f * scale);
             _titleStyle.fontSize = Mathf.RoundToInt(76f * scale);
             _taglineStyle.fontSize = Mathf.RoundToInt(25f * scale);
+            _titleWarningStyle.fontSize = Mathf.RoundToInt(19f * scale);
             _buttonStyle.fontSize = Mathf.RoundToInt(22f * scale);
             _primaryButtonStyle.fontSize = Mathf.RoundToInt(22f * scale);
             _prologueHeadingStyle.fontSize = Mathf.RoundToInt(23f * scale);

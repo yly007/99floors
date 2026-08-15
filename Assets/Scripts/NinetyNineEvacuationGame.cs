@@ -165,7 +165,7 @@ namespace NinetyNine
             _player = _world.Player;
             _narrative = gameObject.AddComponent<EvacuationNarrativeUI>();
             _narrative.Initialize(Resources.Load<Texture2D>("Art/opening_story_atlas_v1"),
-                Resources.Load<Texture2D>("Art/title_elevator_hero_v1"),
+                Resources.Load<Texture2D>("Art/title_midnight_tower_hero_v2"),
                 _uiPanelSkin, _uiButtonSkin, _font, StartPrologue, OpenTitleSettings, ExitFromTitle);
             BuildResolutionList();
             LoadPlayerSettings();
@@ -215,7 +215,7 @@ namespace NinetyNine
             yield return new WaitForSecondsRealtime(4.5f);
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot,
                 "NarrativePrologueElevator.png"));
-            yield return new WaitForSecondsRealtime(5f);
+            yield return new WaitForSecondsRealtime(7.2f);
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot,
                 "NarrativeGameplayThought.png"));
