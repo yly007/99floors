@@ -27,10 +27,14 @@ namespace NinetyNine
         private const float DoorOpenDuration = 2.8f;
         private const float MaxDescentSpeed = 0.55f;
         private const float MonsterRepelCost = 2.5f;
+        private const float InteractionDistance = 3f;
+        private const float LowPowerWarning = 8f;
+        private const float CriticalPowerWarning = 4f;
+        private const float LowTimeWarning = 180f;
+        private const float CriticalTimeWarning = 60f;
 
         private readonly List<EvacuationNpc> _passengers = new List<EvacuationNpc>();
-        private readonly Collider[] _interactionHits = new Collider[32];
-        private readonly RaycastHit[] _interactionSightHits = new RaycastHit[16];
+        private readonly RaycastHit[] _interactionHits = new RaycastHit[16];
         private EvacuationFloorGenerator _world;
         private FirstPersonController _player;
         private EvacuationAudio _audio;
@@ -222,28 +226,47 @@ namespace NinetyNine
             Debug.Log("EVACUATION_NPC_COLLISION_TEST=" + (npcCollisionPassed ? "PASS" : "FAIL"));
             EvacuationInteractable[] interactables = FindObjectsOfType<EvacuationInteractable>();
             bool pickupHitboxPassed = Array.Exists(interactables, value => value != null &&
-                value.Action == EvacuationAction.Item && value.GetComponent<SphereCollider>() != null &&
-                value.GetComponent<SphereCollider>().isTrigger);
+                value.Action == EvacuationAction.Item && value.GetComponent<BoxCollider>() != null &&
+                value.GetComponent<BoxCollider>().isTrigger &&
+                value.GetComponent<BoxCollider>().size.x <= 0.62f);
             Debug.Log("EVACUATION_PICKUP_HITBOX_TEST=" + (pickupHitboxPassed ? "PASS" : "FAIL"));
             EvacuationInteractable starterPickup = Array.Find(interactables, value => value != null &&
                 value.Action == EvacuationAction.Item);
-            bool pointBlankInteractionPassed = false;
+            bool centerRayPassed = false;
+            bool offAxisRejected = false;
+            bool rangeRejected = false;
             if (starterPickup != null && playerController != null)
             {
+                Collider pickupCollider = starterPickup.GetComponent<Collider>();
                 playerController.enabled = false;
                 _player.transform.position = new Vector3(starterPickup.transform.position.x, 0.08f,
-                    starterPickup.transform.position.z - 0.08f);
+                    starterPickup.transform.position.z - 2f);
                 _player.transform.rotation = Quaternion.identity;
                 playerController.enabled = true;
                 Physics.SyncTransforms();
-                EvacuationInteractable pointBlankFocus = FindInteractionFocus(_player.ViewCamera);
-                pointBlankInteractionPassed = pointBlankFocus == starterPickup;
-                Debug.Log("EVACUATION_POINT_BLANK_FOCUS=" +
-                    (pointBlankFocus != null ? pointBlankFocus.name : "NULL"));
+                Vector3 target = pickupCollider != null
+                    ? pickupCollider.bounds.center
+                    : starterPickup.transform.position;
+                Vector3 aimDirection = (target - _player.ViewCamera.transform.position).normalized;
+                _player.ViewCamera.transform.rotation = Quaternion.LookRotation(aimDirection, Vector3.up);
+                centerRayPassed = FindInteractionFocus(_player.ViewCamera) == starterPickup;
+                Vector3 missDirection = Quaternion.AngleAxis(22f, Vector3.up) * aimDirection;
+                _player.ViewCamera.transform.rotation = Quaternion.LookRotation(missDirection, Vector3.up);
+                offAxisRejected = FindInteractionFocus(_player.ViewCamera) != starterPickup;
+
+                playerController.enabled = false;
+                _player.transform.position = new Vector3(starterPickup.transform.position.x, 0.08f,
+                    starterPickup.transform.position.z - InteractionDistance - 1f);
+                playerController.enabled = true;
+                Physics.SyncTransforms();
+                aimDirection = (target - _player.ViewCamera.transform.position).normalized;
+                _player.ViewCamera.transform.rotation = Quaternion.LookRotation(aimDirection, Vector3.up);
+                rangeRejected = FindInteractionFocus(_player.ViewCamera) != starterPickup;
                 _player.ResetInsideCabin();
             }
-            Debug.Log("EVACUATION_POINT_BLANK_INTERACTION_TEST=" +
-                (pointBlankInteractionPassed ? "PASS" : "FAIL"));
+            Debug.Log("EVACUATION_CENTER_RAY_TEST=" + (centerRayPassed ? "PASS" : "FAIL"));
+            Debug.Log("EVACUATION_OFF_AXIS_REJECT_TEST=" + (offAxisRejected ? "PASS" : "FAIL"));
+            Debug.Log("EVACUATION_RANGE_REJECT_TEST=" + (rangeRejected ? "PASS" : "FAIL"));
             Debug.Log("EVACUATION_YAW_720_TEST=" + (_player.VerifyUnclampedYaw() ? "PASS" : "FAIL"));
             Debug.Log("EVACUATION_CROUCH_TOGGLE_TEST=" + (_player.VerifyCrouchToggle() ? "PASS" : "FAIL"));
             float doorPowerBefore = _power;
@@ -272,6 +295,14 @@ namespace NinetyNine
             }
             bool lowPowerStopPassed = _phase == EvacuationPhase.Stopped && _doorSeal > 0.99f;
             Debug.Log("EVACUATION_LOW_POWER_STOP_TEST=" + (lowPowerStopPassed ? "PASS" : "FAIL"));
+            float remainingTimeBeforeWarning = _remainingTime;
+            _remainingTime = CriticalTimeWarning - 5f;
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot, "EvacuationWarnings.png"));
+            bool warningStatePassed = _power <= CriticalPowerWarning &&
+                _remainingTime <= CriticalTimeWarning;
+            Debug.Log("EVACUATION_WARNING_UI_STATE_TEST=" + (warningStatePassed ? "PASS" : "FAIL"));
+            _remainingTime = remainingTimeBeforeWarning;
             ToggleDoors();
             while (_phase == EvacuationPhase.OpeningDoors)
             {
@@ -684,94 +715,38 @@ namespace NinetyNine
             Vector3 origin = camera.transform.position;
             Vector3 forward = camera.transform.forward;
             EvacuationInteractable best = null;
-            float bestScore = float.MaxValue;
-            int count = Physics.OverlapSphereNonAlloc(origin, 1.65f, _interactionHits,
+            float bestDistance = float.MaxValue;
+            float blockingDistance = float.MaxValue;
+            int count = Physics.RaycastNonAlloc(origin, forward, _interactionHits, InteractionDistance,
                 Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
-            EvaluateInteractionHits(origin, forward, count, true, ref best, ref bestScore);
-
-            count = Physics.OverlapCapsuleNonAlloc(origin, origin + forward * 5.2f, 0.32f,
-                _interactionHits, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
-            EvaluateInteractionHits(origin, forward, count, false, ref best, ref bestScore);
-            return best;
-        }
-
-        private void EvaluateInteractionHits(Vector3 origin, Vector3 forward, int count, bool nearby,
-            ref EvacuationInteractable best, ref float bestScore)
-        {
             for (int i = 0; i < count; i++)
             {
-                Collider targetCollider = _interactionHits[i];
+                Collider targetCollider = _interactionHits[i].collider;
                 if (targetCollider == null)
                 {
                     continue;
                 }
+                if (targetCollider.GetComponentInParent<FirstPersonController>() == _player)
+                {
+                    continue;
+                }
+
                 EvacuationInteractable candidate =
                     targetCollider.GetComponentInParent<EvacuationInteractable>();
-                if (candidate == null)
+                if (candidate != null)
                 {
-                    continue;
+                    if (_interactionHits[i].distance < bestDistance)
+                    {
+                        best = candidate;
+                        bestDistance = _interactionHits[i].distance;
+                    }
                 }
-
-                Vector3 target = targetCollider.bounds.center;
-                Vector3 offset = target - origin;
-                float distance = offset.magnitude;
-                float facing = distance > 0.001f ? Vector3.Dot(forward, offset / distance) : 1f;
-                if (!nearby && facing < 0.82f)
+                else if (!targetCollider.isTrigger)
                 {
-                    continue;
-                }
-                if (nearby && facing < -0.2f && distance > 0.45f)
-                {
-                    continue;
-                }
-
-                if (!HasInteractionLineOfSight(origin, target, targetCollider, candidate))
-                {
-                    continue;
-                }
-
-                float score = distance + (1f - facing) * (nearby ? 0.28f : 0.8f);
-                if (score < bestScore)
-                {
-                    best = candidate;
-                    bestScore = score;
+                    blockingDistance = Mathf.Min(blockingDistance, _interactionHits[i].distance);
                 }
             }
-        }
-
-        private bool HasInteractionLineOfSight(Vector3 origin, Vector3 target,
-            Collider targetCollider, EvacuationInteractable candidate)
-        {
-            Vector3 offset = target - origin;
-            float distance = offset.magnitude;
-            if (distance <= 0.001f || targetCollider.bounds.Contains(origin))
-            {
-                return true;
-            }
-
-            int count = Physics.RaycastNonAlloc(origin, offset / distance, _interactionSightHits,
-                distance + 0.05f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
-            float candidateDistance = float.MaxValue;
-            float obstructionDistance = float.MaxValue;
-            for (int i = 0; i < count; i++)
-            {
-                Collider hitCollider = _interactionSightHits[i].collider;
-                if (hitCollider == null || hitCollider.GetComponentInParent<FirstPersonController>() == _player)
-                {
-                    continue;
-                }
-                EvacuationInteractable hitInteractable =
-                    hitCollider.GetComponentInParent<EvacuationInteractable>();
-                if (hitInteractable == candidate)
-                {
-                    candidateDistance = Mathf.Min(candidateDistance, _interactionSightHits[i].distance);
-                }
-                else if (!hitCollider.isTrigger || hitInteractable != null)
-                {
-                    obstructionDistance = Mathf.Min(obstructionDistance, _interactionSightHits[i].distance);
-                }
-            }
-            return candidateDistance < float.MaxValue && candidateDistance <= obstructionDistance + 0.01f;
+            return bestDistance <= blockingDistance + 0.001f ? best : null;
         }
 
         private void CollectItem(EvacuationInteractable item)
@@ -1266,12 +1241,13 @@ namespace NinetyNine
             }
 
             DrawStatus(scale);
+            DrawResourceWarnings(scale);
             if (_dialogueNpc != null)
             {
                 DrawNpcDialogue(scale);
                 return;
             }
-            if (_phase == EvacuationPhase.Stopped || _phase == EvacuationPhase.Descending)
+            if (_phase != EvacuationPhase.Won && _phase != EvacuationPhase.Lost)
             {
                 DrawInteraction(scale);
             }
@@ -1350,18 +1326,73 @@ namespace NinetyNine
                 _smallStyle);
         }
 
+        private void DrawResourceWarnings(float scale)
+        {
+            if (_phase == EvacuationPhase.Won || _phase == EvacuationPhase.Lost)
+            {
+                return;
+            }
+
+            float y = 70f * scale;
+            if (_power <= LowPowerWarning)
+            {
+                bool critical = _power <= CriticalPowerWarning;
+                string warning = critical
+                    ? "致命警告：电梯电量即将耗尽"
+                    : "警告：电梯电量不足  " + Mathf.CeilToInt(_power) + " / " + Mathf.CeilToInt(MaxPower);
+                DrawHudWarning(warning, critical, ref y, scale);
+            }
+            if (_remainingTime <= LowTimeWarning)
+            {
+                bool critical = _remainingTime <= CriticalTimeWarning;
+                int minutes = Mathf.Max(0, Mathf.FloorToInt(_remainingTime / 60f));
+                int seconds = Mathf.Max(0, Mathf.FloorToInt(_remainingTime % 60f));
+                string warning = critical
+                    ? "紧急：撤离窗口即将关闭  " + minutes.ToString("00") + ":" + seconds.ToString("00")
+                    : "警告：撤离时间不足  " + minutes.ToString("00") + ":" + seconds.ToString("00");
+                DrawHudWarning(warning, critical, ref y, scale);
+            }
+        }
+
+        private void DrawHudWarning(string warning, bool critical, ref float y, float scale)
+        {
+            float pulse = critical ? 0.62f + Mathf.PingPong(Time.unscaledTime * 0.8f, 0.38f) : 0.92f;
+            Color accent = critical
+                ? new Color(1f, 0.035f, 0.015f, pulse)
+                : new Color(1f, 0.38f, 0.04f, pulse);
+            Rect rect = new Rect(Screen.width * 0.5f - 220f * scale, y,
+                440f * scale, 38f * scale);
+            DrawPanel(rect, accent);
+            Color old = GUI.color;
+            GUI.color = accent;
+            GUI.Label(rect, warning, _centerStyle);
+            GUI.color = old;
+            y += 44f * scale;
+        }
+
         private void DrawInteraction(float scale)
         {
             float size = 4f * scale;
             DrawTint(new Rect(Screen.width * 0.5f - size * 0.5f, Screen.height * 0.5f - size * 0.5f,
                 size, size), _focus == null ? new Color(0.7f, 0.8f, 0.78f, 0.58f) : new Color(0.1f, 1f, 0.72f, 0.92f));
-            if (_focus == null)
+
+            string context = _player.IsHidden
+                ? "[E]  离开藏身处"
+                : _focus != null ? "[E]  " + _focus.Label : "将准星对准目标以交互";
+            string controls = "[WASD] 移动   [SHIFT] 冲刺   [CTRL] 蹲伏";
+            if (_hasFlashlight)
             {
-                return;
+                controls += "   [F] 手电筒";
             }
-            string verb = "按 E";
-            GUI.Label(new Rect(Screen.width * 0.32f, Screen.height * 0.57f,
-                Screen.width * 0.36f, 42f * scale), verb + " · " + _focus.Label, _centerStyle);
+            Rect hud = new Rect(Screen.width * 0.25f, Screen.height - 92f * scale,
+                Screen.width * 0.5f, 68f * scale);
+            DrawPanel(hud, _focus != null || _player.IsHidden
+                ? new Color(0.08f, 0.9f, 0.72f)
+                : new Color(0.24f, 0.38f, 0.36f));
+            GUI.Label(new Rect(hud.x, hud.y + 3f * scale, hud.width, 32f * scale),
+                context, _centerStyle);
+            GUI.Label(new Rect(hud.x, hud.y + 32f * scale, hud.width, 30f * scale),
+                controls, _centerStyle);
         }
 
         private void DrawNpcDialogue(float scale)

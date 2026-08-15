@@ -36,6 +36,70 @@ namespace NinetyNineEditor
             EditorApplication.isPlaying = true;
         }
 
+        [MenuItem("Tools/The 99th Floor/Build Windows Player")]
+        public static void BuildWindowsPlayer()
+        {
+            EnsureBuildSettings();
+            EnsureRuntimeShaders();
+            string projectRoot = System.IO.Directory.GetParent(Application.dataPath).FullName;
+            string outputPath = System.IO.Path.Combine(projectRoot, "Builds", "Windows", "99Floors.exe");
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(outputPath));
+            BuildPlayerOptions options = new BuildPlayerOptions
+            {
+                scenes = EditorBuildSettings.scenes.Where(scene => scene.enabled)
+                    .Select(scene => scene.path).ToArray(),
+                locationPathName = outputPath,
+                target = BuildTarget.StandaloneWindows64,
+                options = BuildOptions.None
+            };
+            UnityEditor.Build.Reporting.BuildReport report = BuildPipeline.BuildPlayer(options);
+            if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
+            {
+                throw new System.InvalidOperationException("Windows build failed: " + report.summary.result);
+            }
+            Debug.Log("EVACUATION_WINDOWS_BUILD=PASS PATH=" + outputPath +
+                " SIZE=" + report.summary.totalSize);
+        }
+
+        private static void EnsureRuntimeShaders()
+        {
+            Object graphicsSettings = AssetDatabase.LoadAllAssetsAtPath(
+                "ProjectSettings/GraphicsSettings.asset").FirstOrDefault();
+            SerializedObject serializedSettings = new SerializedObject(graphicsSettings);
+            SerializedProperty includedShaders = serializedSettings.FindProperty("m_AlwaysIncludedShaders");
+            string[] requiredShaderNames =
+            {
+                "Standard",
+                "Particles/Standard Unlit",
+                "Hidden/NinetyNine/AnalogHorror"
+            };
+            foreach (string shaderName in requiredShaderNames)
+            {
+                Shader shader = Shader.Find(shaderName);
+                if (shader == null)
+                {
+                    throw new System.InvalidOperationException("Required shader not found: " + shaderName);
+                }
+                bool included = false;
+                for (int i = 0; i < includedShaders.arraySize; i++)
+                {
+                    if (includedShaders.GetArrayElementAtIndex(i).objectReferenceValue == shader)
+                    {
+                        included = true;
+                        break;
+                    }
+                }
+                if (!included)
+                {
+                    int index = includedShaders.arraySize;
+                    includedShaders.InsertArrayElementAtIndex(index);
+                    includedShaders.GetArrayElementAtIndex(index).objectReferenceValue = shader;
+                }
+            }
+            serializedSettings.ApplyModifiedPropertiesWithoutUndo();
+            AssetDatabase.SaveAssets();
+        }
+
         private static void EnsureProject()
         {
             if (EditorApplication.isCompiling || EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode)

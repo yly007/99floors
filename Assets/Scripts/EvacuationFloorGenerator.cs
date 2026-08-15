@@ -609,8 +609,8 @@ namespace NinetyNine
             root.SetParent(_floorRoot, false);
             root.position = position;
             Box("Folder", Vector3.zero, new Vector3(0.42f, 0.08f, 0.56f), _amberGlow, root, false);
-            SphereCollider collider = root.gameObject.AddComponent<SphereCollider>();
-            collider.radius = 0.72f;
+            BoxCollider collider = root.gameObject.AddComponent<BoxCollider>();
+            collider.size = new Vector3(0.54f, 0.18f, 0.68f);
             collider.isTrigger = true;
             EvacuationInteractable interactable = root.gameObject.AddComponent<EvacuationInteractable>();
             interactable.Configure(EvacuationAction.Evidence, "调查异常档案",
@@ -698,9 +698,10 @@ namespace NinetyNine
             Box("Visual", Vector3.zero,
                 kind == EvacuationItemKind.PowerCell ? new Vector3(0.48f, 0.7f, 0.35f) : new Vector3(0.32f, 0.32f, 0.32f),
                 material, root, false);
-            SphereCollider hitbox = root.gameObject.AddComponent<SphereCollider>();
-            hitbox.center = new Vector3(0f, 0.28f, 0f);
-            hitbox.radius = kind == EvacuationItemKind.PowerCell ? 0.9f : 0.82f;
+            BoxCollider hitbox = root.gameObject.AddComponent<BoxCollider>();
+            hitbox.size = kind == EvacuationItemKind.PowerCell
+                ? new Vector3(0.58f, 0.82f, 0.48f)
+                : new Vector3(0.42f, 0.42f, 0.42f);
             hitbox.isTrigger = true;
             EvacuationInteractable interactable = root.gameObject.AddComponent<EvacuationInteractable>();
             interactable.Configure(EvacuationAction.Item, ItemLabel(kind), kind);
