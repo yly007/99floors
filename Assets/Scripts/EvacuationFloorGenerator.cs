@@ -29,9 +29,6 @@ namespace NinetyNine
         private Transform _rightDoor;
         private GameObject _barrier;
         private TextMesh _floorDisplay;
-        private TextMesh _powerDisplay;
-        private TextMesh _timeDisplay;
-        private TextMesh _statusDisplay;
         private Light _cabinLight;
         private Light _flashlight;
         private Material _black;
@@ -301,21 +298,9 @@ namespace NinetyNine
             }
         }
 
-        public void SetDisplays(int floor, float power, float seconds, string status)
+        public void SetFloorDisplay(int floor)
         {
             if (_floorDisplay != null) _floorDisplay.text = Mathf.Clamp(floor, 1, 99).ToString("00");
-            if (_powerDisplay != null)
-            {
-                _powerDisplay.text = "PWR " + Mathf.CeilToInt(Mathf.Max(0f, power)).ToString("00");
-                _powerDisplay.color = power > 10f ? new Color(0.12f, 1f, 0.72f) : new Color(1f, 0.08f, 0.02f);
-            }
-            if (_timeDisplay != null)
-            {
-                int minutes = Mathf.Max(0, Mathf.FloorToInt(seconds / 60f));
-                int secs = Mathf.Max(0, Mathf.FloorToInt(seconds % 60f));
-                _timeDisplay.text = minutes.ToString("00") + ":" + secs.ToString("00");
-            }
-            if (_statusDisplay != null) _statusDisplay.text = status;
         }
 
         public void SetControlState(EvacuationAction action, bool active, bool danger)
@@ -406,18 +391,7 @@ namespace NinetyNine
             CreateControl("FUSE PANEL", "安装保险丝", EvacuationAction.FusePanel,
                 new Vector3(1.25f, 1.25f, -2.19f), Quaternion.Euler(0f, 180f, 0f), _amberGlow);
 
-            Transform floorPanel = Box("FloorPanel", new Vector3(0f, 2.69f, 2.19f),
-                new Vector3(0.68f, 0.38f, 0.04f), _black, _cabin, false);
-            _floorDisplay = CreateText("Floor", floorPanel, "99", 0.055f, new Color(1f, 0.06f, 0.02f));
-            Transform powerPanel = Box("PowerPanel", new Vector3(-1.05f, 2.72f, 2.19f),
-                new Vector3(0.86f, 0.28f, 0.04f), _black, _cabin, false);
-            _powerDisplay = CreateText("Power", powerPanel, "PWR 26", 0.017f, new Color(0.12f, 1f, 0.72f));
-            Transform timePanel = Box("TimePanel", new Vector3(1.05f, 2.72f, 2.19f),
-                new Vector3(0.86f, 0.28f, 0.04f), _black, _cabin, false);
-            _timeDisplay = CreateText("Time", timePanel, "12:00", 0.019f, new Color(1f, 0.44f, 0.08f));
-            Transform statusPanel = Box("StatusPanel", new Vector3(0f, 2.24f, 2.19f),
-                new Vector3(1.2f, 0.18f, 0.04f), _black, _cabin, false);
-            _statusDisplay = CreateText("Status", statusPanel, "FLOOR OPEN", 0.011f, new Color(0.18f, 0.82f, 0.72f));
+            CreateDoorHeaderDisplay();
 
             _cabinLight = CreateLight("Cabin Light", new Vector3(0f, 2.85f, -0.25f),
                 new Color(0.72f, 0.83f, 0.88f), 3.8f, 7f, _cabin);
@@ -427,6 +401,20 @@ namespace NinetyNine
             _barrier.transform.position = new Vector3(0f, 1.5f, 2.36f);
             BoxCollider barrierCollider = _barrier.AddComponent<BoxCollider>();
             barrierCollider.size = new Vector3(3.1f, 3f, 0.14f);
+        }
+
+        private void CreateDoorHeaderDisplay()
+        {
+            Transform displayRoot = new GameObject("DoorHeaderDisplay").transform;
+            displayRoot.SetParent(_cabin, false);
+            displayRoot.localPosition = new Vector3(0f, 2.98f, 2.19f);
+            Box("DisplayBezel", Vector3.zero, new Vector3(1.34f, 0.38f, 0.07f),
+                _metal, displayRoot, false);
+            Box("DisplayGlass", new Vector3(0f, 0f, -0.045f), new Vector3(1.14f, 0.26f, 0.025f),
+                _black, displayRoot, false);
+            _floorDisplay = CreateText("Floor", displayRoot, "99", 0.035f,
+                new Color(1f, 0.055f, 0.018f), new Vector3(0f, 0f, -0.068f));
+            _floorDisplay.fontStyle = FontStyle.Bold;
         }
 
         private void BuildPlayer()

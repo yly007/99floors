@@ -51,6 +51,8 @@ namespace NinetyNine
         private GUIStyle _bodyStyle;
         private GUIStyle _smallStyle;
         private GUIStyle _centerStyle;
+        private GUIStyle _telemetryLabelStyle;
+        private GUIStyle _telemetryValueStyle;
         private EvacuationPhase _phase = EvacuationPhase.Title;
         private float _power;
         private float _remainingTime;
@@ -141,6 +143,10 @@ namespace NinetyNine
             yield return new WaitForSeconds(0.35f);
             BeginRun();
             yield return new WaitForSeconds(3f);
+            _player.ResetInsideCabin();
+            _messageUntil = 0f;
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot, "EvacuationDisplay.png"));
             _player.transform.rotation = Quaternion.Euler(0f, -68f, 0f);
             _messageUntil = 0f;
             yield return new WaitForEndOfFrame();
@@ -1146,14 +1152,9 @@ namespace NinetyNine
 
         private void UpdateWorldState()
         {
-            string status = _phase == EvacuationPhase.ClosingDoors ? "DOORS CLOSING" :
-                _phase == EvacuationPhase.OpeningDoors ? "DOORS OPENING" :
-                _phase == EvacuationPhase.Descending ? (_braking ? "BRAKING" : "DESCENDING") :
-                _doorIntegrity <= 0 ? "DOOR FAILED" : _carryingCell ? "CARRYING CELL" :
-                _doorSeal > 0.98f ? "STOPPED / DOORS CLOSED" : "FLOOR OPEN";
             int displayFloor = _currentPlan != null && _currentPlan.Event == FloorEventKind.WrongFloorNumber
                 ? Mathf.Clamp(_currentFloor + 7, 1, 99) : _currentFloor;
-            _world.SetDisplays(displayFloor, _power, _remainingTime, status);
+            _world.SetFloorDisplay(displayFloor);
             _world.SetControlState(EvacuationAction.Descend,
                 _phase == EvacuationPhase.Stopped && _doorSeal > 0.98f, false);
             _world.SetControlState(EvacuationAction.Stop, _phase == EvacuationPhase.Descending, false);
@@ -1232,7 +1233,7 @@ namespace NinetyNine
         private void OnGUI()
         {
             EnsureStyles();
-            float scale = Mathf.Clamp(Screen.height / 1080f, 0.65f, 1.5f);
+            float scale = Mathf.Clamp(Screen.height / 1080f, 0.8f, 1.5f);
             ApplyStyleScale(scale);
             if (_phase == EvacuationPhase.Title)
             {
@@ -1292,14 +1293,39 @@ namespace NinetyNine
         {
             int minutes = Mathf.Max(0, Mathf.FloorToInt(_remainingTime / 60f));
             int seconds = Mathf.Max(0, Mathf.FloorToInt(_remainingTime % 60f));
-            Rect telemetry = new Rect(Screen.width * 0.5f - 245f * scale, 18f * scale,
-                490f * scale, 42f * scale);
-            DrawPanel(telemetry, _power > 8f ? new Color(0.08f, 0.82f, 0.72f) :
-                new Color(1f, 0.08f, 0.02f));
-            GUI.Label(telemetry,
-                "FLOOR " + _currentFloor.ToString("00") + "     POWER " +
-                Mathf.CeilToInt(_power).ToString("00") + "/" + Mathf.CeilToInt(MaxPower) +
-                "     TIME " + minutes.ToString("00") + ":" + seconds.ToString("00"), _centerStyle);
+            float gap = 8f * scale;
+            float floorWidth = 140f * scale;
+            float powerWidth = 270f * scale;
+            float timeWidth = 224f * scale;
+            float totalWidth = floorWidth + powerWidth + timeWidth + gap * 2f;
+            float x = Screen.width * 0.5f - totalWidth * 0.5f;
+            float y = 16f * scale;
+            float height = 64f * scale;
+            Rect floorCard = new Rect(x, y, floorWidth, height);
+            Rect powerCard = new Rect(floorCard.xMax + gap, y, powerWidth, height);
+            Rect timeCard = new Rect(powerCard.xMax + gap, y, timeWidth, height);
+
+            DrawTelemetryCard(floorCard, "楼层", _currentFloor.ToString("00"),
+                new Color(1f, 0.055f, 0.018f));
+            Color powerColor = _power > LowPowerWarning
+                ? new Color(0.08f, 0.82f, 0.72f)
+                : new Color(1f, 0.08f, 0.02f);
+            DrawTelemetryCard(powerCard, "电梯电量",
+                Mathf.CeilToInt(_power).ToString("00") + " / " + Mathf.CeilToInt(MaxPower), powerColor);
+            DrawBar(new Rect(powerCard.x + 14f * scale, powerCard.yMax - 9f * scale,
+                powerCard.width - 28f * scale, 4f * scale), _power / MaxPower, powerColor);
+            DrawTelemetryCard(timeCard, "剩余时间",
+                minutes.ToString("00") + ":" + seconds.ToString("00"), new Color(1f, 0.44f, 0.08f));
+
+            Rect statusCard = new Rect(Screen.width * 0.5f - 180f * scale, 86f * scale,
+                360f * scale, 28f * scale);
+            Color statusColor = _doorIntegrity <= 0
+                ? new Color(1f, 0.06f, 0.025f)
+                : _phase == EvacuationPhase.Descending
+                    ? new Color(1f, 0.44f, 0.08f)
+                    : new Color(0.08f, 0.82f, 0.72f);
+            DrawPanel(statusCard, statusColor);
+            GUI.Label(statusCard, CurrentElevatorStatus(), _centerStyle);
 
             float left = 24f * scale;
             float top = Screen.height - 118f * scale;
@@ -1326,6 +1352,25 @@ namespace NinetyNine
                 _smallStyle);
         }
 
+        private void DrawTelemetryCard(Rect rect, string label, string value, Color accent)
+        {
+            DrawPanel(rect, accent);
+            GUI.Label(new Rect(rect.x, rect.y + 2f, rect.width, rect.height * 0.34f),
+                label, _telemetryLabelStyle);
+            GUI.Label(new Rect(rect.x, rect.y + rect.height * 0.25f, rect.width, rect.height * 0.65f),
+                value, _telemetryValueStyle);
+        }
+
+        private string CurrentElevatorStatus()
+        {
+            if (_phase == EvacuationPhase.ClosingDoors) return "电梯门关闭中";
+            if (_phase == EvacuationPhase.OpeningDoors) return "电梯门开启中";
+            if (_phase == EvacuationPhase.Descending) return _braking ? "制动中" : "正在下降";
+            if (_doorIntegrity <= 0) return "门控系统故障";
+            if (_carryingCell) return "正在搬运电梯电池";
+            return _doorSeal > 0.98f ? "已停稳 · 电梯门关闭" : "已停稳 · 楼层开放";
+        }
+
         private void DrawResourceWarnings(float scale)
         {
             if (_phase == EvacuationPhase.Won || _phase == EvacuationPhase.Lost)
@@ -1333,7 +1378,7 @@ namespace NinetyNine
                 return;
             }
 
-            float y = 70f * scale;
+            float y = 122f * scale;
             if (_power <= LowPowerWarning)
             {
                 bool critical = _power <= CriticalPowerWarning;
@@ -1473,6 +1518,10 @@ namespace NinetyNine
             _bodyStyle.wordWrap = true;
             _smallStyle = NewStyle(FontStyle.Normal, TextAnchor.MiddleLeft, new Color(0.55f, 0.74f, 0.7f));
             _centerStyle = NewStyle(FontStyle.Normal, TextAnchor.MiddleCenter, new Color(0.8f, 0.92f, 0.88f));
+            _telemetryLabelStyle = NewStyle(FontStyle.Normal, TextAnchor.MiddleCenter,
+                new Color(0.55f, 0.74f, 0.7f));
+            _telemetryValueStyle = NewStyle(FontStyle.Bold, TextAnchor.MiddleCenter,
+                new Color(0.9f, 0.97f, 0.95f));
         }
 
         private GUIStyle NewStyle(FontStyle style, TextAnchor anchor, Color color)
@@ -1493,6 +1542,8 @@ namespace NinetyNine
             _bodyStyle.fontSize = Mathf.RoundToInt(21f * scale);
             _smallStyle.fontSize = Mathf.RoundToInt(15f * scale);
             _centerStyle.fontSize = Mathf.RoundToInt(17f * scale);
+            _telemetryLabelStyle.fontSize = Mathf.RoundToInt(13f * scale);
+            _telemetryValueStyle.fontSize = Mathf.RoundToInt(25f * scale);
         }
 
         private static Font CreateGameFont()
