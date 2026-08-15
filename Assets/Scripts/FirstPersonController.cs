@@ -12,6 +12,7 @@ namespace NinetyNine
         private CharacterController _controller;
         private Camera _camera;
         private float _pitch;
+        private float _yaw;
         private float _verticalVelocity;
         private float _stepCycle;
         private float _stamina = 100f;
@@ -46,6 +47,7 @@ namespace NinetyNine
             _controller = GetComponent<CharacterController>();
             _camera = playerCamera;
             _cameraBasePosition = _camera.transform.localPosition;
+            SyncYawFromTransform();
         }
 
         public void ResetInsideCabin()
@@ -60,6 +62,7 @@ namespace NinetyNine
             transform.position = new Vector3(0f, 0.08f, -0.72f);
             transform.rotation = Quaternion.identity;
             _pitch = 0f;
+            _yaw = 0f;
             _verticalVelocity = 0f;
             _stamina = 100f;
             _sprintRecoveryDelay = 0f;
@@ -103,7 +106,12 @@ namespace NinetyNine
                 HasMovementInput = false;
                 return;
             }
-            ForceCursorLock();
+            if (!EnsureCursorLock())
+            {
+                MovementAmount = 0f;
+                HasMovementInput = false;
+                return;
+            }
 
             float mouseX = Input.GetAxisRaw("Mouse X") * LookSensitivity;
             float mouseY = Input.GetAxisRaw("Mouse Y") * LookSensitivity;
@@ -241,8 +249,18 @@ namespace NinetyNine
 
         private void ApplyLook(float yawDelta, float pitchDelta)
         {
-            transform.Rotate(0f, yawDelta, 0f, Space.Self);
+            _yaw += yawDelta;
+            if (Mathf.Abs(_yaw) > 360000f)
+            {
+                _yaw = Mathf.Repeat(_yaw + 180f, 360f) - 180f;
+            }
+            transform.rotation = Quaternion.AngleAxis(_yaw, Vector3.up);
             _pitch = Mathf.Clamp(_pitch - pitchDelta, -85f, 85f);
+        }
+
+        private void SyncYawFromTransform()
+        {
+            _yaw = Mathf.DeltaAngle(0f, transform.eulerAngles.y);
         }
 
         public void EnterHidingSpot(Transform hidingPoint, Vector3 exitPosition)
@@ -255,6 +273,7 @@ namespace NinetyNine
             _controller.enabled = false;
             transform.position = hidingPoint.position;
             transform.rotation = hidingPoint.rotation;
+            SyncYawFromTransform();
             _controller.enabled = true;
             _controller.detectCollisions = false;
             _hidden = true;
@@ -277,14 +296,23 @@ namespace NinetyNine
             _hidden = false;
         }
 
-        private void ForceCursorLock()
+        private bool EnsureCursorLock()
         {
             if (!_applicationFocused || _cursorReleased)
             {
-                return;
+                return false;
             }
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
+            if (Cursor.lockState != CursorLockMode.Locked)
+            {
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+                return false;
+            }
+            if (Cursor.visible)
+            {
+                Cursor.visible = false;
+            }
+            return true;
         }
 
 #if UNITY_EDITOR
@@ -300,14 +328,21 @@ namespace NinetyNine
         public bool VerifyUnclampedYaw()
         {
             Quaternion before = transform.rotation;
-            float yawBefore = transform.eulerAngles.y;
+            float yawBefore = _yaw;
+            _yaw = 179f;
+            transform.rotation = Quaternion.AngleAxis(_yaw, Vector3.up);
             ApplyLook(179f, 0f);
             float yawAtBoundary = transform.eulerAngles.y;
             ApplyLook(6f, 0f);
             float yawAfterBoundary = transform.eulerAngles.y;
+            for (int i = 0; i < 4; i++) ApplyLook(180f, 0f);
+            bool completedFullTurns = Mathf.Abs(Mathf.DeltaAngle(yawAfterBoundary,
+                transform.eulerAngles.y)) < 0.1f;
             transform.rotation = before;
-            return Mathf.Abs(Mathf.DeltaAngle(yawBefore, yawAtBoundary) - 179f) < 0.1f &&
-                Mathf.Abs(Mathf.DeltaAngle(yawAtBoundary, yawAfterBoundary) - 6f) < 0.1f;
+            _yaw = yawBefore;
+            return Mathf.Abs(Mathf.DeltaAngle(179f, yawAtBoundary) - 179f) < 0.1f &&
+                Mathf.Abs(Mathf.DeltaAngle(yawAtBoundary, yawAfterBoundary) - 6f) < 0.1f &&
+                completedFullTurns;
         }
 
         public bool VerifyBlockedStandUp()
@@ -329,7 +364,16 @@ namespace NinetyNine
             if (hasFocus && CanMove)
             {
                 _cursorReleased = false;
-                ForceCursorLock();
+                EnsureCursorLock();
+            }
+        }
+
+        private void OnApplicationPause(bool paused)
+        {
+            _applicationFocused = !paused;
+            if (!paused && CanMove)
+            {
+                _cursorReleased = false;
             }
         }
     }
