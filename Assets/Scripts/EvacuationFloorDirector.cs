@@ -59,6 +59,11 @@ namespace NinetyNine
             {
                 result.SpawnMonster = true;
             }
+            if (EvacuationFloorEventUtility.IsPureAnomaly(floorEvent))
+            {
+                result.SpawnMonster = false;
+                result.SpawnNpc = false;
+            }
             if (result.SpawnMonster)
             {
                 result.SpawnNpc = false;

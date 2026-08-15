@@ -34,7 +34,10 @@ namespace NinetyNine
         ElevatorParasite,
         TimeSlip,
         FalseLobby,
-        PassengerMismatch
+        PassengerMismatch,
+        DuplicateElevator,
+        ReverseWayfinding,
+        EmptyMeeting
     }
 
     public enum FloorPressure
@@ -44,6 +47,16 @@ namespace NinetyNine
         Threat,
         Chase,
         Anomaly
+    }
+
+    public static class EvacuationFloorEventUtility
+    {
+        public static bool IsPureAnomaly(FloorEventKind kind)
+        {
+            return kind == FloorEventKind.DuplicateElevator ||
+                kind == FloorEventKind.ReverseWayfinding ||
+                kind == FloorEventKind.EmptyMeeting;
+        }
     }
 
     public enum FloorLayoutKind

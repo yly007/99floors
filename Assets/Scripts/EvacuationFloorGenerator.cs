@@ -131,8 +131,9 @@ namespace NinetyNine
             bool blackout = plan.Blackout;
             bool distorted = plan.Distorted;
             int length = plan.Length;
-            bool spawnMonster = plan.SpawnMonster;
-            bool spawnNpc = plan.SpawnNpc && !spawnMonster;
+            bool pureAnomaly = EvacuationFloorEventUtility.IsPureAnomaly(plan.Event);
+            bool spawnMonster = plan.SpawnMonster && !pureAnomaly;
+            bool spawnNpc = plan.SpawnNpc && !spawnMonster && !pureAnomaly;
 
             _floorRoot = new GameObject("Floor_" + floorNumber + "_" + theme + "_" +
                 plan.Layout).transform;
@@ -1010,6 +1011,37 @@ namespace NinetyNine
                 case FloorEventKind.MirroredCorridor:
                     Box("ImpossibleWall", mid + new Vector3(0f, 1.55f, 0.85f),
                         new Vector3(2.2f, 3f, 0.08f), _glass, _floorRoot, true);
+                    break;
+                case FloorEventKind.DuplicateElevator:
+                    Box("DuplicateElevatorFrame", far + new Vector3(0f, 1.45f, 0.72f),
+                        new Vector3(2.25f, 2.85f, 0.18f), _doorMetal, _floorRoot, false);
+                    Box("DuplicateElevatorLeftDoor", far + new Vector3(-0.55f, 1.42f, 0.6f),
+                        new Vector3(0.92f, 2.56f, 0.1f), _cabinMetal, _floorRoot, false);
+                    Box("DuplicateElevatorRightDoor", far + new Vector3(0.55f, 1.42f, 0.6f),
+                        new Vector3(0.92f, 2.56f, 0.1f), _cabinMetal, _floorRoot, false);
+                    TextMesh duplicateDisplay = CreateText("DuplicateElevatorDisplay", _floorRoot, "99", 0.19f,
+                        new Color(1f, 0.04f, 0.02f), far + new Vector3(0f, 2.62f, 0.47f));
+                    duplicateDisplay.fontStyle = FontStyle.Bold;
+                    break;
+                case FloorEventKind.ReverseWayfinding:
+                    Box("ReverseWayfindingSign", far + new Vector3(0f, 1.95f, 0.68f),
+                        new Vector3(2.25f, 0.66f, 0.08f), _exitSign, _floorRoot, false);
+                    TextMesh reverseText = CreateText("ReverseWayfindingText", _floorRoot, "← 返回", 0.075f,
+                        new Color(0.95f, 0.72f, 0.28f), far + new Vector3(0f, 1.95f, 0.57f));
+                    reverseText.fontStyle = FontStyle.Bold;
+                    break;
+                case FloorEventKind.EmptyMeeting:
+                    Box("EmptyMeetingTable", far + new Vector3(0f, 0.72f, 0.42f),
+                        new Vector3(2.05f, 0.12f, 0.86f), _office, _floorRoot, false);
+                    for (int i = -2; i <= 2; i++)
+                    {
+                        Box("EmptyMeetingChair", far + new Vector3(i * 0.72f, 0.38f, -0.28f),
+                            new Vector3(0.38f, 0.72f, 0.42f), _black, _floorRoot, false);
+                    }
+                    TextMesh meetingText = CreateText("EmptyMeetingDisplay", _floorRoot,
+                        "会议仍在继续", 0.058f, new Color(0.08f, 0.82f, 0.72f),
+                        far + new Vector3(0f, 1.34f, 0.3f));
+                    meetingText.fontStyle = FontStyle.Bold;
                     break;
             }
             if (plan.Pressure == FloorPressure.Anomaly || plan.Event == FloorEventKind.WrongFloorNumber ||

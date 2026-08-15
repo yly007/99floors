@@ -206,6 +206,8 @@ namespace NinetyNineEditor
                     valid &= !(floor == 99 && plan.SpawnMonster);
                     valid &= !(floor == 99 && plan.SpawnNpc);
                     valid &= !(plan.SpawnMonster && plan.SpawnNpc);
+                    valid &= !EvacuationFloorEventUtility.IsPureAnomaly(plan.Event) ||
+                        (!plan.SpawnMonster && !plan.SpawnNpc);
                     valid &= !(previous == FloorPressure.Chase && plan.Pressure == FloorPressure.Chase);
                     List<Vector2Int> generatedPath = new List<Vector2Int>();
                     HashSet<Vector2Int> generatedCells = new HashSet<Vector2Int>();

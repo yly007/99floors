@@ -127,6 +127,7 @@ namespace NinetyNine
         private string _dialogueText = string.Empty;
         private string _endingTitle = string.Empty;
         private string _endingBody = string.Empty;
+        private string _endingDebrief = string.Empty;
         private string _powerNoticeText = string.Empty;
         private string _cachedHudFloorText = "99";
         private string _cachedHudPowerText = "16 / 30";
@@ -170,8 +171,8 @@ namespace NinetyNine
             LoadPlayerSettings();
             ShowTitle();
 #if !UNITY_EDITOR
-            _showLauncherSettings = PlayerPrefs.GetInt("Evacuation.LauncherConfigured", 0) == 0;
-            _narrative.ShowTitle(!_showLauncherSettings);
+            _showLauncherSettings = false;
+            _narrative.ShowTitle(true);
 #endif
 
 #if UNITY_EDITOR
@@ -342,6 +343,7 @@ namespace NinetyNine
                 Time.timeScale = 1f;
                 yield return new WaitForSeconds(0.5f);
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot, "EvacuationFailure.png"));
+                yield return new WaitForEndOfFrame();
                 Debug.Log("EVACUATION_FAILURE_TEST=PASS");
                 UnityEditor.EditorApplication.Exit(0);
                 yield break;
@@ -399,6 +401,11 @@ namespace NinetyNine
                 QualitySettings.GetQualityLevel() == QualitySettings.names.Length - 1;
             Debug.Log("EVACUATION_LAUNCH_TUNING_TEST=" + (launchTuningPassed ? "PASS" : "FAIL"));
             Debug.Log("EVACUATION_HIGHEST_QUALITY_TEST=" + (highestQualityPassed ? "PASS" : "FAIL"));
+            bool titleFirstPassed = !_showLauncherSettings && _phase != EvacuationPhase.Title;
+            bool deathDebriefPassed = BuildDeathDebrief("失 重").Contains("启动与制动余量") &&
+                BuildDeathDebrief("伪 人").Contains("乘客去向");
+            Debug.Log("EVACUATION_TITLE_FIRST_TEST=" + (titleFirstPassed ? "PASS" : "FAIL"));
+            Debug.Log("EVACUATION_DEATH_DEBRIEF_TEST=" + (deathDebriefPassed ? "PASS" : "FAIL"));
             Debug.Log("EVACUATION_FOOTSTEP_GATE_TEST=" + (_audio.VerifyFootstepGate() ? "PASS" : "FAIL"));
             ChangePower(_power - 4f, "启动测试", false);
             bool discretePowerNoticePassed = _powerNoticeText.Contains("启动测试  -4") &&
@@ -414,6 +421,28 @@ namespace NinetyNine
                     ? "PASS" : "FAIL"));
             Debug.Log("EVACUATION_INITIAL_BRIEFING_TEST=" +
                 (InitialBriefingVisible() ? "PASS" : "FAIL"));
+
+            FloorEventKind[] pureEvents =
+            {
+                FloorEventKind.DuplicateElevator,
+                FloorEventKind.ReverseWayfinding,
+                FloorEventKind.EmptyMeeting
+            };
+            bool pureAnomalyPassed = true;
+            for (int i = 0; i < pureEvents.Length; i++)
+            {
+                EvacuationFloorPlan purePlan = _floorDirector.CreatePlan(RunSeed, 88 - i, _power,
+                    _floorsVisited + i);
+                purePlan.Event = pureEvents[i];
+                purePlan.SpawnMonster = true;
+                purePlan.SpawnNpc = true;
+                _world.BuildFloor(purePlan);
+                yield return null;
+                pureAnomalyPassed &= _world.Monster == null && FindObjectsOfType<EvacuationNpc>().Length == 0;
+            }
+            BeginRun(true);
+            yield return null;
+            Debug.Log("EVACUATION_PURE_ANOMALY_TEST=" + (pureAnomalyPassed ? "PASS" : "FAIL"));
 
             bool safeStartPassed = _world.Monster == null &&
                 FindObjectsOfType<EvacuationNpc>().Length == 0;
@@ -961,6 +990,7 @@ namespace NinetyNine
             _loopCount = 0;
             _dialogueNpc = null;
             _dialogueText = string.Empty;
+            _endingDebrief = string.Empty;
             _focus = null;
             _slowUntil = 0f;
             _stimulantUntil = 0f;
@@ -2014,10 +2044,40 @@ namespace NinetyNine
             _audio.PlayDeath();
             _endingTitle = title;
             _endingBody = body;
+            _endingDebrief = BuildDeathDebrief(title);
             _player.CanMove = false;
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
             LogRunResult("LOSS", title);
+        }
+
+        private string BuildDeathDebrief(string title)
+        {
+            string advice;
+            if (title == "封 锁")
+            {
+                advice = "优先搜近处物资；低价值楼层不要停留太久。";
+            }
+            else if (title == "困 死" || title == "失 重")
+            {
+                advice = "保留启动与制动余量，见好就收，别把电量赌在下一层。";
+            }
+            else if (title == "被 追 上" || title == "闯 入 轿 厢" || title == "藏 身 处")
+            {
+                advice = "先利用拐角或躲藏点拉开距离，再回电梯关门。";
+            }
+            else if (title == "伪 人" || title == "带 出 去 了")
+            {
+                advice = "别只看求助；核对乘客去向和异常行为。";
+            }
+            else
+            {
+                advice = "线索、幸存者与电量都值得带回电梯。";
+            }
+            return "本次复盘：抵达 " + _currentFloor + " 层 · 探索 " + _floorsVisited +
+                " 层 · 线索 " + (_story != null ? _story.ClueCount : 0) + " · 救出 " + _rescued +
+                " · 剩余电量 " + Mathf.CeilToInt(_power) + " / " + Mathf.CeilToInt(MaxPower) +
+                "\n下一局建议：" + advice;
         }
 
         private void ChangePower(float targetPower, string reason, bool continuous)
@@ -2495,6 +2555,11 @@ namespace NinetyNine
                 rect.width - 80f * scale, 70f * scale), _endingTitle, _headingStyle);
             GUI.Label(new Rect(rect.x + 40f * scale, rect.y + 120f * scale,
                 rect.width - 80f * scale, 115f * scale), _endingBody, _bodyStyle);
+            if (_phase == EvacuationPhase.Lost)
+            {
+                GUI.Label(new Rect(rect.x + 40f * scale, rect.y + 248f * scale,
+                    rect.width - 80f * scale, 70f * scale), _endingDebrief, _smallStyle);
+            }
             GUI.Label(new Rect(rect.x + 40f * scale, rect.yMax - 110f * scale,
                 rect.width - 80f * scale, 70f * scale),
                 (_phase == EvacuationPhase.Won ? "抵达楼层 " : "死亡楼层 ") + _currentFloor +
