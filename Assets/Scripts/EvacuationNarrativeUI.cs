@@ -301,7 +301,7 @@ namespace NinetyNine
                 contentWidth, 76f * scale),
                 "你已经加班太久，久到这栋大楼忘了让你离开。", _taglineStyle);
             GUI.Label(new Rect(left, Screen.height * 0.525f,
-                contentWidth, 26f * scale), "不要相信它停在一楼。", _titleWarningStyle);
+                contentWidth, 26f * scale), "你能逃出生天吗？", _titleWarningStyle);
 
             if (GUI.Button(new Rect(left, Screen.height * 0.595f,
                 330f * scale, 58f * scale), "进入电梯", _primaryButtonStyle))
