@@ -183,14 +183,29 @@ namespace NinetyNine
             }
             else if (!isExitFloor)
             {
+                bool criticalPower = _game.Power < 5f;
                 bool lowPower = _game.Power < 11f;
-                EvacuationItemKind primary = lowPower || random.NextDouble() < 0.55
-                    ? EvacuationItemKind.PowerCell
-                    : RandomSmallItem(random);
                 Vector2Int primaryCell = plan.SpawnMonster
                     ? mainPath[Mathf.Max(2, mainPath.Count - 3)]
                     : mainPath[mainPath.Count - 1];
-                CreatePickup(primary, CellPosition(primaryCell) + new Vector3(0f, 0.42f, 0f));
+                if (lowPower)
+                {
+                    Vector2Int recoveryCell = criticalPower
+                        ? mainPath[Mathf.Min(1, mainPath.Count - 1)]
+                        : mainPath[Mathf.Max(2, mainPath.Count / 2)];
+                    CreatePickup(EvacuationItemKind.EmergencyCell,
+                        CellPosition(recoveryCell) + new Vector3(0f, 0.34f, -0.35f));
+                    EvacuationItemKind deepReward = random.NextDouble() < 0.48
+                        ? EvacuationItemKind.PowerCell : RandomSmallItem(random);
+                    CreatePickup(deepReward,
+                        CellPosition(primaryCell) + new Vector3(0f, 0.42f, 0f));
+                }
+                else
+                {
+                    EvacuationItemKind primary = random.NextDouble() < 0.4
+                        ? EvacuationItemKind.PowerCell : RandomSmallItem(random);
+                    CreatePickup(primary, CellPosition(primaryCell) + new Vector3(0f, 0.42f, 0f));
+                }
                 if (random.NextDouble() < 0.72)
                 {
                     Vector2Int bonusCell = mainPath[random.Next(2, mainPath.Count - 1)];
@@ -217,6 +232,13 @@ namespace NinetyNine
                     Vector2Int evidenceCell = mainPath[Mathf.Max(2, mainPath.Count - 2)];
                     CreateEvidence(CellPosition(evidenceCell) + new Vector3(-0.62f, 0.28f, 0.35f),
                         floorNumber, plan.Event);
+                }
+
+                if (_game.NeedsDoorFuse)
+                {
+                    Vector2Int fuseCell = mainPath[Mathf.Min(1, mainPath.Count - 1)];
+                    CreatePickup(EvacuationItemKind.Fuse,
+                        CellPosition(fuseCell) + new Vector3(0.68f, 0.3f, -0.38f));
                 }
 
                 if (plan.SpawnMonster)
@@ -747,17 +769,23 @@ namespace NinetyNine
             root.SetParent(_floorRoot, false);
             root.position = position;
             Box("Visual", Vector3.zero,
-                kind == EvacuationItemKind.PowerCell ? new Vector3(0.48f, 0.7f, 0.35f) : new Vector3(0.32f, 0.32f, 0.32f),
+                kind == EvacuationItemKind.PowerCell ? new Vector3(0.48f, 0.7f, 0.35f) :
+                kind == EvacuationItemKind.EmergencyCell ? new Vector3(0.42f, 0.48f, 0.3f) :
+                new Vector3(0.32f, 0.32f, 0.32f),
                 material, root, false);
             BoxCollider hitbox = root.gameObject.AddComponent<BoxCollider>();
             hitbox.size = kind == EvacuationItemKind.PowerCell
                 ? new Vector3(0.58f, 0.82f, 0.48f)
+                : kind == EvacuationItemKind.EmergencyCell
+                    ? new Vector3(0.52f, 0.6f, 0.42f)
                 : new Vector3(0.42f, 0.42f, 0.42f);
             hitbox.isTrigger = true;
             EvacuationInteractable interactable = root.gameObject.AddComponent<EvacuationInteractable>();
             interactable.Configure(EvacuationAction.Item, ItemLabel(kind), kind);
             Light glow = CreateLight(kind + "Glow", position + Vector3.up * 0.35f,
-                kind == EvacuationItemKind.Medkit ? Color.red : new Color(0.08f, 0.9f, 0.72f),
+                kind == EvacuationItemKind.Medkit ? Color.red :
+                kind == EvacuationItemKind.EmergencyCell ? new Color(1f, 0.38f, 0.04f) :
+                new Color(0.08f, 0.9f, 0.72f),
                 1.6f, 2.4f, _floorRoot);
             glow.shadows = LightShadows.None;
         }
@@ -1014,6 +1042,7 @@ namespace NinetyNine
             switch (kind)
             {
                 case EvacuationItemKind.PowerCell: return "搬起电梯电池";
+                case EvacuationItemKind.EmergencyCell: return "搬起破损电池";
                 case EvacuationItemKind.Medkit: return "使用医疗包";
                 case EvacuationItemKind.Stimulant: return "注射肾上腺素";
                 case EvacuationItemKind.Flashlight: return "拾取手电筒";

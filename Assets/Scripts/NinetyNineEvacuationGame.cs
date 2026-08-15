@@ -18,6 +18,13 @@ namespace NinetyNine
 
     public sealed class NinetyNineEvacuationGame : MonoBehaviour
     {
+        private static readonly Vector2Int[] SupportedResolutions =
+        {
+            new Vector2Int(1280, 720),
+            new Vector2Int(1600, 900),
+            new Vector2Int(1920, 1080),
+            new Vector2Int(2560, 1440)
+        };
         private const float MaxPower = 26f;
         private const float StartCost = 4f;
         private const float TravelCostPerFloor = 0.9f;
@@ -27,6 +34,9 @@ namespace NinetyNine
         private const float DoorOpenDuration = 2.8f;
         private const float MaxDescentSpeed = 0.55f;
         private const float MonsterRepelCost = 2.5f;
+        private const float FullCellCharge = 12f;
+        private const float EmergencyCellCharge = 6f;
+        private const int MaxDoorIntegrity = 2;
         private const float InteractionDistance = 3f;
         private const float LowPowerWarning = 8f;
         private const float CriticalPowerWarning = 4f;
@@ -66,8 +76,11 @@ namespace NinetyNine
         private float _slowUntil;
         private float _stimulantUntil;
         private float _flashCharge;
-        private float _mimicCountdown;
         private float _stoppedAutomationTime;
+        private float _carriedCellCharge;
+        private float _storedCellCharge;
+        private float _masterVolume = 1f;
+        private float _brightness = 1f;
         private int _currentFloor;
         private int _doorIntegrity;
         private int _floorsVisited;
@@ -85,6 +98,10 @@ namespace NinetyNine
         private bool _captureThreat;
         private bool _acceptedAdministrator;
         private bool _automationVisitedFloor;
+        private bool _paused;
+        private bool _showLauncherSettings;
+        private bool _fullscreen;
+        private int _resolutionIndex = 2;
         private string _message = string.Empty;
         private string _dialogueText = string.Empty;
         private string _endingTitle = string.Empty;
@@ -96,6 +113,7 @@ namespace NinetyNine
         public float DoorSeal => _doorSeal;
         public bool IsFlashlightOn => _flashlightOn;
         public bool IsDescending => _phase == EvacuationPhase.Descending;
+        public bool NeedsDoorFuse => _doorIntegrity <= 0;
         public bool IsExploring => (_phase == EvacuationPhase.Stopped ||
             _phase == EvacuationPhase.ClosingDoors) && _doorSeal < 0.98f;
         public float Impairment => Mathf.Clamp01((1f - _health / 100f) * 0.55f +
@@ -118,6 +136,7 @@ namespace NinetyNine
             _world = gameObject.AddComponent<EvacuationFloorGenerator>();
             _world.Initialize(this, _audio);
             _player = _world.Player;
+            LoadPlayerSettings();
             ShowTitle();
 
 #if UNITY_EDITOR
@@ -263,6 +282,31 @@ namespace NinetyNine
                 questionTrustPassed = startNpc.Trust == expectedTrust;
             }
             Debug.Log("EVACUATION_NPC_QUESTION_TRUST_TEST=" + (questionTrustPassed ? "PASS" : "FAIL"));
+            bool passengerTargetPassed = IsPassengerDestinationMatch(91, 91) &&
+                IsPassengerDestinationMatch(90, 91) && !IsPassengerDestinationMatch(89, 91);
+            Debug.Log("EVACUATION_PASSENGER_TARGET_TEST=" + (passengerTargetPassed ? "PASS" : "FAIL"));
+            GameObject mimicAObject = new GameObject("MimicTimerTestA");
+            mimicAObject.AddComponent<CapsuleCollider>();
+            EvacuationNpc mimicA = mimicAObject.AddComponent<EvacuationNpc>();
+            mimicA.Initialize(this, _player, true, 80);
+            mimicA.SetOnboard(_world.PassengerRoot, Vector3.zero);
+            mimicA.ArmMimic(1f);
+            GameObject mimicBObject = new GameObject("MimicTimerTestB");
+            mimicBObject.AddComponent<CapsuleCollider>();
+            EvacuationNpc mimicB = mimicBObject.AddComponent<EvacuationNpc>();
+            mimicB.Initialize(this, _player, true, 70);
+            mimicB.SetOnboard(_world.PassengerRoot, Vector3.one);
+            mimicB.ArmMimic(3f);
+            bool mimicTimerPassed = mimicA.TickMimic(1.1f) && !mimicB.TickMimic(1.1f) &&
+                mimicB.MimicTimeRemaining > 1f;
+            Debug.Log("EVACUATION_MULTIPLE_MIMIC_TIMER_TEST=" + (mimicTimerPassed ? "PASS" : "FAIL"));
+            Destroy(mimicAObject);
+            Destroy(mimicBObject);
+            SetPaused(true);
+            bool pausePassed = _paused && Time.timeScale == 0f && !_player.CanMove;
+            SetPaused(false);
+            pausePassed &= !_paused && Mathf.Approximately(Time.timeScale, 1f) && _player.CanMove;
+            Debug.Log("EVACUATION_PAUSE_TEST=" + (pausePassed ? "PASS" : "FAIL"));
             Collider npcCollider = startNpc != null ? startNpc.GetComponent<Collider>() : null;
             CharacterController playerController = _player.GetComponent<CharacterController>();
             bool npcCollisionPassed = npcCollider != null && playerController != null &&
@@ -427,9 +471,30 @@ namespace NinetyNine
 
         private void Update()
         {
+            if (_phase == EvacuationPhase.Title && _showLauncherSettings &&
+                Input.GetKeyDown(KeyCode.Escape))
+            {
+                _showLauncherSettings = false;
+                return;
+            }
+            if (_dialogueNpc != null && Input.GetKeyDown(KeyCode.Escape))
+            {
+                CloseNpcDialogue();
+                return;
+            }
+            if (_phase != EvacuationPhase.Title && Input.GetKeyDown(KeyCode.Escape))
+            {
+                SetPaused(!_paused);
+                return;
+            }
+            if (_paused)
+            {
+                return;
+            }
             if (_phase == EvacuationPhase.Title)
             {
-                if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space))
+                if (!_showLauncherSettings &&
+                    (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space)))
                 {
                     BeginRun();
                 }
@@ -487,6 +552,8 @@ namespace NinetyNine
 
         private void ShowTitle()
         {
+            Time.timeScale = 1f;
+            _paused = false;
             _phase = EvacuationPhase.Title;
             _player.CanMove = false;
             _player.ResetInsideCabin();
@@ -494,8 +561,62 @@ namespace NinetyNine
             Cursor.visible = true;
         }
 
+        private void LoadPlayerSettings()
+        {
+            _player.LookSensitivity = PlayerPrefs.GetFloat("Evacuation.LookSensitivity", 2.6f);
+            _masterVolume = PlayerPrefs.GetFloat("Evacuation.MasterVolume", 0.9f);
+            _brightness = PlayerPrefs.GetFloat("Evacuation.Brightness", 1f);
+            _resolutionIndex = Mathf.Clamp(PlayerPrefs.GetInt("Evacuation.Resolution", 2),
+                0, SupportedResolutions.Length - 1);
+            _fullscreen = PlayerPrefs.GetInt("Evacuation.Fullscreen", 1) != 0;
+            AudioListener.volume = _masterVolume;
+            AnalogPostEffect.DisplayBrightness = _brightness;
+#if !UNITY_EDITOR
+            Vector2Int resolution = SupportedResolutions[_resolutionIndex];
+            Screen.SetResolution(resolution.x, resolution.y, _fullscreen);
+#endif
+        }
+
+        private void SavePlayerSettings()
+        {
+            PlayerPrefs.SetFloat("Evacuation.LookSensitivity", _player.LookSensitivity);
+            PlayerPrefs.SetFloat("Evacuation.MasterVolume", _masterVolume);
+            PlayerPrefs.SetFloat("Evacuation.Brightness", _brightness);
+            PlayerPrefs.SetInt("Evacuation.Resolution", _resolutionIndex);
+            PlayerPrefs.SetInt("Evacuation.Fullscreen", _fullscreen ? 1 : 0);
+            PlayerPrefs.Save();
+        }
+
+        private void ApplyDisplaySettings()
+        {
+            Vector2Int resolution = SupportedResolutions[_resolutionIndex];
+            Screen.SetResolution(resolution.x, resolution.y, _fullscreen);
+            SavePlayerSettings();
+        }
+
+        private void SetPaused(bool paused)
+        {
+            _paused = paused && _phase != EvacuationPhase.Title &&
+                _phase != EvacuationPhase.Won && _phase != EvacuationPhase.Lost;
+            Time.timeScale = _paused ? 0f : 1f;
+            if (_paused)
+            {
+                _player.CanMove = false;
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+            }
+            else if (_phase != EvacuationPhase.Title && _phase != EvacuationPhase.Won &&
+                _phase != EvacuationPhase.Lost && _dialogueNpc == null)
+            {
+                _player.CanMove = true;
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+            }
+        }
+
         private void BeginRun()
         {
+            SetPaused(false);
             RunSeed = unchecked(Environment.TickCount * 397) ^ DateTime.Now.Millisecond;
             foreach (EvacuationNpc passenger in _passengers)
             {
@@ -508,7 +629,7 @@ namespace NinetyNine
             _power = 19f;
             _remainingTime = RunDuration;
             _health = 100f;
-            _doorIntegrity = 2;
+            _doorIntegrity = MaxDoorIntegrity;
             _doorSeal = 0f;
             _descentSpeed = 0f;
             _braking = false;
@@ -517,12 +638,13 @@ namespace NinetyNine
             _flashlightOn = false;
             _carryingCell = false;
             _storedCell = false;
+            _carriedCellCharge = 0f;
+            _storedCellCharge = 0f;
             _hasFuse = false;
             _floorsVisited = 1;
             _rescued = 0;
             _scrap = 0;
             _automationWorstStopError = 0;
-            _mimicCountdown = 0f;
             _automation = false;
             _captureThreat = false;
             _acceptedAdministrator = false;
@@ -824,13 +946,18 @@ namespace NinetyNine
             switch (item.ItemKind)
             {
                 case EvacuationItemKind.PowerCell:
+                case EvacuationItemKind.EmergencyCell:
                     if (_carryingCell)
                     {
                         ShowTransientMessage("双手已经抱着一块电梯电池。", 1.3f);
                         return;
                     }
                     _carryingCell = true;
-                    ShowTransientMessage("电池很重。冲刺消耗增加。", 1.5f);
+                    _carriedCellCharge = item.ItemKind == EvacuationItemKind.PowerCell
+                        ? FullCellCharge : EmergencyCellCharge;
+                    ShowTransientMessage(item.ItemKind == EvacuationItemKind.PowerCell
+                        ? "完整电池很重。带回电梯可恢复 12 电量。"
+                        : "破损电池仍有余电。带回电梯可恢复 6 电量。", 1.7f);
                     break;
                 case EvacuationItemKind.Medkit:
                     _health = Mathf.Min(100f, _health + 38f);
@@ -874,15 +1001,19 @@ namespace NinetyNine
             {
                 if (_power < MaxPower - 0.5f)
                 {
-                    _power = Mathf.Min(MaxPower, _power + 12f);
+                    float installedCharge = Mathf.Max(EmergencyCellCharge, _carriedCellCharge);
+                    _power = Mathf.Min(MaxPower, _power + installedCharge);
                     _carryingCell = false;
+                    _carriedCellCharge = 0f;
                     _audio.PlayPickup();
                     ShowTransientMessage("电池已安装。当前电量 " + Mathf.CeilToInt(_power) + " / 26。", 1.6f);
                 }
                 else if (!_storedCell)
                 {
                     _storedCell = true;
+                    _storedCellCharge = Mathf.Max(EmergencyCellCharge, _carriedCellCharge);
                     _carryingCell = false;
+                    _carriedCellCharge = 0f;
                     ShowTransientMessage("备用架只能存放这一块电池。", 1.4f);
                 }
                 else
@@ -894,7 +1025,8 @@ namespace NinetyNine
             if (_storedCell && _power < MaxPower - 0.5f)
             {
                 _storedCell = false;
-                _power = Mathf.Min(MaxPower, _power + 12f);
+                _power = Mathf.Min(MaxPower, _power + Mathf.Max(EmergencyCellCharge, _storedCellCharge));
+                _storedCellCharge = 0f;
                 _audio.PlayPickup();
                 ShowTransientMessage("备用电池已接入。", 1.2f);
                 return;
@@ -910,7 +1042,7 @@ namespace NinetyNine
                 return;
             }
             _hasFuse = false;
-            _doorIntegrity = 2;
+            _doorIntegrity = MaxDoorIntegrity;
             _power = Mathf.Min(MaxPower, _power + 3f);
             _audio.PlayPickup();
             ShowTransientMessage("门机恢复，备用线路返还 3 点电力。", 1.5f);
@@ -973,9 +1105,12 @@ namespace NinetyNine
                 return;
             }
             _power = Mathf.Max(0.01f, _power - MonsterRepelCost);
+            _doorIntegrity = Mathf.Max(0, _doorIntegrity - 1);
             _world.RemoveMonster(monster);
             _audio.PlayDoor();
-            ShowTransientMessage("门机过载阻挡了它：-2.5 电力。", 2f);
+            ShowTransientMessage(_doorIntegrity <= 0
+                ? "门机过载挡住了它，但控制器烧毁：-2.5 电力。下一层必须寻找保险丝。"
+                : "门机过载阻挡了它：-2.5 电力，门控耐久 " + _doorIntegrity + " / " + MaxDoorIntegrity + "。", 2.4f);
         }
 
         public void NpcBoarded(EvacuationNpc npc)
@@ -994,7 +1129,7 @@ namespace NinetyNine
             _passengers.Add(npc);
             if (npc.IsMimic)
             {
-                _mimicCountdown = UnityEngine.Random.Range(24f, 42f);
+                npc.ArmMimic(UnityEngine.Random.Range(24f, 42f));
             }
             ShowTransientMessage("乘客已进入电梯。目的地 " + npc.DestinationFloor + " 层。", 1.7f);
         }
@@ -1009,7 +1144,6 @@ namespace NinetyNine
             bool mimic = npc.IsMimic;
             _passengers.Remove(npc);
             Destroy(npc.gameObject);
-            if (mimic) _mimicCountdown = 0f;
             ShowTransientMessage(mimic ? "它走出电梯后，影子仍留在轿厢里。" :
                 "幸存者被你赶回了楼层。", 1.8f);
         }
@@ -1127,14 +1261,14 @@ namespace NinetyNine
 
         private void UpdatePassengers()
         {
-            if (_mimicCountdown <= 0f)
+            for (int i = 0; i < _passengers.Count; i++)
             {
-                return;
-            }
-            _mimicCountdown -= Time.deltaTime;
-            if (_mimicCountdown <= 0f)
-            {
-                Lose("伪 人", "灯光最后一次亮起时，乘客的脸贴在你的肩后。轿厢里再没有幸存者。");
+                EvacuationNpc passenger = _passengers[i];
+                if (passenger != null && passenger.TickMimic(Time.deltaTime))
+                {
+                    Lose("伪 人", "灯光最后一次亮起时，乘客的脸贴在你的肩后。轿厢里再没有幸存者。");
+                    return;
+                }
             }
         }
 
@@ -1148,7 +1282,8 @@ namespace NinetyNine
                     _passengers.RemoveAt(i);
                     continue;
                 }
-                if (!passenger.IsMimic && _currentFloor <= passenger.DestinationFloor)
+                if (!passenger.IsMimic &&
+                    IsPassengerDestinationMatch(_currentFloor, passenger.DestinationFloor))
                 {
                     _power = Mathf.Min(MaxPower, _power + 6f);
                     _rescued++;
@@ -1156,7 +1291,18 @@ namespace NinetyNine
                     Destroy(passenger.gameObject);
                     ShowTransientMessage("乘客到站，留下了一块应急电池：+6 电力。", 2f);
                 }
+                else if (!passenger.IsMimic && _currentFloor < passenger.DestinationFloor - 1)
+                {
+                    _passengers.RemoveAt(i);
+                    Destroy(passenger.gameObject);
+                    ShowTransientMessage("你错过了乘客的目标楼层。对方沉默地离开，没有留下奖励。", 2.2f);
+                }
             }
+        }
+
+        private static bool IsPassengerDestinationMatch(int currentFloor, int destinationFloor)
+        {
+            return Mathf.Abs(currentFloor - destinationFloor) <= 1;
         }
 
         public void SetFloorMovementPenalty(float multiplier)
@@ -1190,6 +1336,7 @@ namespace NinetyNine
                     if (_power < 24f)
                     {
                         _carryingCell = true;
+                        _carriedCellCharge = FullCellCharge;
                         InstallPowerCell();
                     }
                 }
@@ -1216,7 +1363,7 @@ namespace NinetyNine
                 ? Mathf.Clamp(_currentFloor + 7, 1, 99) : _currentFloor;
             _world.SetFloorDisplay(displayFloor);
             _world.SetCabinLighting(_power / MaxPower, _power <= LowPowerWarning,
-                _power <= CriticalPowerWarning, _mimicCountdown > 0f && _mimicCountdown <= 8f);
+                _power <= CriticalPowerWarning, HasUrgentMimic());
             _world.SetControlState(EvacuationAction.Descend,
                 _phase == EvacuationPhase.Stopped && _doorSeal > 0.98f, false);
             _world.SetControlState(EvacuationAction.Stop, _phase == EvacuationPhase.Descending, false);
@@ -1225,6 +1372,20 @@ namespace NinetyNine
                 _phase == EvacuationPhase.OpeningDoors, _doorIntegrity <= 0);
             _world.SetControlState(EvacuationAction.BatterySlot, _carryingCell || _storedCell, _power < 8f);
             _world.SetControlState(EvacuationAction.FusePanel, _hasFuse, _doorIntegrity <= 0);
+        }
+
+        private bool HasUrgentMimic()
+        {
+            for (int i = 0; i < _passengers.Count; i++)
+            {
+                EvacuationNpc passenger = _passengers[i];
+                if (passenger != null && passenger.IsMimic && passenger.MimicTimeRemaining > 0f &&
+                    passenger.MimicTimeRemaining <= 8f)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private void ResolveExit()
@@ -1300,12 +1461,21 @@ namespace NinetyNine
             if (_phase == EvacuationPhase.Title)
             {
                 DrawTitle(scale);
+                if (_showLauncherSettings)
+                {
+                    DrawSettingsPanel(scale, false);
+                }
                 return;
             }
 
             DrawStatus(scale);
             DrawObjective(scale);
             DrawResourceWarnings(scale);
+            if (_paused)
+            {
+                DrawSettingsPanel(scale, true);
+                return;
+            }
             if (_dialogueNpc != null)
             {
                 DrawNpcDialogue(scale);
@@ -1350,6 +1520,11 @@ namespace NinetyNine
                 "WASD 移动 · SHIFT 冲刺 · C/CTRL 切换蹲伏 · E 交互 · F 手电筒 · 鼠标无限观察", _smallStyle);
             GUI.Label(new Rect(Screen.width * 0.065f, Screen.height * 0.84f,
                 Screen.width * 0.45f, 42f * scale), "按 ENTER 开始撤离", _bodyStyle);
+            if (GUI.Button(new Rect(Screen.width - 300f * scale, Screen.height - 86f * scale,
+                250f * scale, 46f * scale), "启动显示与操作设置"))
+            {
+                _showLauncherSettings = true;
+            }
         }
 
         private void DrawStatus(float scale)
@@ -1408,7 +1583,8 @@ namespace NinetyNine
             if (_carryingCell)
             {
                 GUI.Label(new Rect(Screen.width - 330f * scale, 24f * scale,
-                    300f * scale, 30f * scale), "双手搬运：电梯电池", _smallStyle);
+                    300f * scale, 30f * scale), "双手搬运：" +
+                    (_carriedCellCharge >= FullCellCharge ? "完整电池" : "破损电池"), _smallStyle);
             }
             GUI.Label(new Rect(Screen.width - 330f * scale, 58f * scale,
                 300f * scale, 28f * scale), "线索 " + _story.ClueCount + " / 6   零件 " + _scrap,
@@ -1578,6 +1754,76 @@ namespace NinetyNine
             }
         }
 
+        private void DrawSettingsPanel(float scale, bool paused)
+        {
+            DrawTint(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0f, 0f, 0f, 0.76f));
+            Rect rect = new Rect(Screen.width * 0.5f - 285f * scale,
+                Screen.height * 0.5f - 250f * scale, 570f * scale, 500f * scale);
+            DrawPanel(rect, new Color(1f, 0.48f, 0.1f));
+            GUI.Label(new Rect(rect.x + 30f * scale, rect.y + 20f * scale,
+                rect.width - 60f * scale, 42f * scale), paused ? "游戏已暂停" : "启动设置", _headingStyle);
+
+            float labelX = rect.x + 34f * scale;
+            float valueX = rect.x + 210f * scale;
+            float width = rect.width - 250f * scale;
+            float y = rect.y + 82f * scale;
+            GUI.Label(new Rect(labelX, y, 170f * scale, 30f * scale), "鼠标灵敏度", _bodyStyle);
+            _player.LookSensitivity = GUI.HorizontalSlider(new Rect(valueX, y + 9f * scale,
+                width, 20f * scale), _player.LookSensitivity, 0.8f, 5f);
+            y += 58f * scale;
+            GUI.Label(new Rect(labelX, y, 170f * scale, 30f * scale), "总音量", _bodyStyle);
+            _masterVolume = GUI.HorizontalSlider(new Rect(valueX, y + 9f * scale,
+                width, 20f * scale), _masterVolume, 0f, 1f);
+            AudioListener.volume = _masterVolume;
+            y += 58f * scale;
+            GUI.Label(new Rect(labelX, y, 170f * scale, 30f * scale), "画面亮度", _bodyStyle);
+            _brightness = GUI.HorizontalSlider(new Rect(valueX, y + 9f * scale,
+                width, 20f * scale), _brightness, 0.72f, 1.35f);
+            AnalogPostEffect.DisplayBrightness = _brightness;
+            y += 64f * scale;
+
+            Vector2Int resolution = SupportedResolutions[_resolutionIndex];
+            if (GUI.Button(new Rect(labelX, y, 48f * scale, 38f * scale), "<"))
+            {
+                _resolutionIndex = (_resolutionIndex - 1 + SupportedResolutions.Length) %
+                    SupportedResolutions.Length;
+            }
+            GUI.Label(new Rect(labelX + 58f * scale, y, 190f * scale, 38f * scale),
+                resolution.x + " × " + resolution.y, _centerStyle);
+            if (GUI.Button(new Rect(labelX + 250f * scale, y, 48f * scale, 38f * scale), ">"))
+            {
+                _resolutionIndex = (_resolutionIndex + 1) % SupportedResolutions.Length;
+            }
+            if (GUI.Button(new Rect(labelX + 316f * scale, y, 185f * scale, 38f * scale),
+                _fullscreen ? "全屏模式" : "窗口模式"))
+            {
+                _fullscreen = !_fullscreen;
+            }
+            y += 56f * scale;
+            if (GUI.Button(new Rect(labelX, y, 230f * scale, 42f * scale), "应用分辨率"))
+            {
+                ApplyDisplaySettings();
+            }
+            if (GUI.Button(new Rect(labelX + 250f * scale, y, 250f * scale, 42f * scale),
+                paused ? "继续游戏" : "保存并关闭"))
+            {
+                SavePlayerSettings();
+                if (paused) SetPaused(false);
+                else _showLauncherSettings = false;
+            }
+            y += 58f * scale;
+            if (paused && GUI.Button(new Rect(labelX, y, 230f * scale, 40f * scale), "使用新种子重开"))
+            {
+                BeginRun();
+            }
+            if (GUI.Button(new Rect(labelX + (paused ? 250f : 125f) * scale, y,
+                (paused ? 250f : 250f) * scale, 40f * scale), "退出游戏"))
+            {
+                SavePlayerSettings();
+                Application.Quit();
+            }
+        }
+
         private void DrawEnding(float scale)
         {
             DrawTint(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0f, 0f, 0f, 0.7f));
@@ -1633,6 +1879,8 @@ namespace NinetyNine
                 new Color(0.55f, 0.74f, 0.7f));
             _telemetryValueStyle = NewStyle(FontStyle.Bold, TextAnchor.MiddleCenter,
                 new Color(0.9f, 0.97f, 0.95f));
+            GUI.skin.button.font = _font;
+            GUI.skin.button.fontSize = 16;
         }
 
         private GUIStyle NewStyle(FontStyle style, TextAnchor anchor, Color color)

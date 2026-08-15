@@ -5,7 +5,6 @@ namespace NinetyNine
     [RequireComponent(typeof(CharacterController))]
     public sealed class FirstPersonController : MonoBehaviour
     {
-        private const float MouseSensitivity = 4f;
         private const float StandingHeight = 1.72f;
         private const float CrouchingHeight = 1.08f;
 
@@ -31,6 +30,7 @@ namespace NinetyNine
         public bool CanMove { get; set; }
         public bool UseStamina { get; set; }
         public float SpeedMultiplier { get; set; } = 1f;
+        public float LookSensitivity { get; set; } = 2.6f;
         public Camera ViewCamera => _camera;
         public float Stamina01 => _stamina / 100f;
         public float MovementAmount { get; private set; }
@@ -89,14 +89,6 @@ namespace NinetyNine
                 return;
             }
 
-            if (Input.GetKeyDown(KeyCode.Escape))
-            {
-                _cursorReleased = true;
-                Cursor.lockState = CursorLockMode.None;
-                Cursor.visible = true;
-                MovementAmount = 0f;
-                return;
-            }
             if (Input.GetMouseButtonDown(0))
             {
                 _cursorReleased = false;
@@ -108,8 +100,8 @@ namespace NinetyNine
             }
             ForceCursorLock();
 
-            float mouseX = Input.GetAxisRaw("Mouse X") * MouseSensitivity;
-            float mouseY = Input.GetAxisRaw("Mouse Y") * MouseSensitivity;
+            float mouseX = Input.GetAxisRaw("Mouse X") * LookSensitivity;
+            float mouseY = Input.GetAxisRaw("Mouse Y") * LookSensitivity;
             ApplyLook(mouseX, mouseY);
 
             if (_hidden)

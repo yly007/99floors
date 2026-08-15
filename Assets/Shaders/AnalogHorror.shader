@@ -5,6 +5,7 @@ Shader "Hidden/NinetyNine/AnalogHorror"
         _MainTex ("Texture", 2D) = "white" {}
         _Intensity ("Intensity", Range(0, 1)) = 0.5
         _TimeSeed ("Time Seed", Float) = 0
+        _Brightness ("Brightness", Range(0.5, 1.5)) = 1
     }
     SubShader
     {
@@ -21,6 +22,7 @@ Shader "Hidden/NinetyNine/AnalogHorror"
             float4 _MainTex_TexelSize;
             float _Intensity;
             float _TimeSeed;
+            float _Brightness;
 
             float Hash(float2 p)
             {
@@ -54,6 +56,7 @@ Shader "Hidden/NinetyNine/AnalogHorror"
                 float vignette = smoothstep(0.72, 0.18, radius);
                 color *= lerp(1.0, vignette, 0.62 * _Intensity);
                 color = lerp(color, color * float3(0.88, 1.04, 1.02), 0.24);
+                color *= _Brightness;
                 return fixed4(saturate(color), 1.0);
             }
             ENDCG

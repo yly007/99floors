@@ -6,6 +6,8 @@ namespace NinetyNine
     [RequireComponent(typeof(Camera))]
     public sealed class AnalogPostEffect : MonoBehaviour
     {
+        public static float DisplayBrightness { get; set; } = 1f;
+
         private Material _material;
 
         public NinetyNineGame Game { get; set; }
@@ -41,6 +43,7 @@ namespace NinetyNine
             }
             _material.SetFloat("_Intensity", intensity);
             _material.SetFloat("_TimeSeed", Time.time * 0.37f);
+            _material.SetFloat("_Brightness", Mathf.Clamp(DisplayBrightness, 0.72f, 1.35f));
             Graphics.Blit(source, destination, _material);
         }
 

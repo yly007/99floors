@@ -18,6 +18,7 @@ namespace NinetyNine
     public enum EvacuationItemKind
     {
         PowerCell,
+        EmergencyCell,
         Medkit,
         Stimulant,
         Flashlight,
@@ -62,6 +63,7 @@ namespace NinetyNine
         public NpcArchetype Archetype { get; private set; }
         public int Trust { get; private set; }
         public int Fear { get; private set; }
+        public float MimicTimeRemaining { get; private set; }
         public string DisplayName => IsMimic ? "沉默的幸存者" : ArchetypeName(Archetype);
 
         public void Initialize(NinetyNineEvacuationGame game, FirstPersonController player,
@@ -74,6 +76,7 @@ namespace NinetyNine
             Archetype = (NpcArchetype)Mathf.Abs(destinationFloor % 6);
             Trust = mimic ? -1 : 1;
             Fear = 2;
+            MimicTimeRemaining = 0f;
             _collider = GetComponent<Collider>();
             CharacterController playerController = player.GetComponent<CharacterController>();
             if (_collider != null && playerController != null)
@@ -144,6 +147,24 @@ namespace NinetyNine
             {
                 _collider.enabled = false;
             }
+        }
+
+        public void ArmMimic(float duration)
+        {
+            if (IsMimic)
+            {
+                MimicTimeRemaining = Mathf.Max(0.1f, duration);
+            }
+        }
+
+        public bool TickMimic(float deltaTime)
+        {
+            if (!IsMimic || !IsOnboard || MimicTimeRemaining <= 0f)
+            {
+                return false;
+            }
+            MimicTimeRemaining -= deltaTime;
+            return MimicTimeRemaining <= 0f;
         }
 
         private void Update()
