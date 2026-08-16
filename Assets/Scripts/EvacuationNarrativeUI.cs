@@ -61,6 +61,20 @@ namespace NinetyNine
         private bool _prologueActive;
 
         public bool PrologueActive => _prologueActive;
+        public bool GameplaySubtitleVisible => !_titleVisible && !_prologueActive && _activeSubtitle != null;
+        public string GameplaySubtitleSpeaker => _activeSubtitle != null ? _activeSubtitle.Speaker : string.Empty;
+        public string GameplaySubtitleBody => _activeSubtitle != null ? _activeSubtitle.Body : string.Empty;
+        public Color GameplaySubtitleAccent => _activeSubtitle != null ? _activeSubtitle.Accent : Color.white;
+        public float GameplaySubtitleAlpha
+        {
+            get
+            {
+                if (_activeSubtitle == null) return 0f;
+                float elapsed = Time.unscaledTime - _subtitleStarted;
+                return Mathf.Min(Mathf.Clamp01(elapsed / 0.18f),
+                    Mathf.Clamp01((_activeSubtitle.Duration - elapsed) / 0.35f));
+            }
+        }
 
         public void Initialize(Texture2D storyAtlas, Texture2D titleHero, Texture2D titleWordmark,
             Texture2D panelSkin, Texture2D buttonSkin, Font font, Action beginAction, Action settingsAction,
@@ -220,14 +234,13 @@ namespace NinetyNine
 
         private void OnGUI()
         {
-            if (!_titleVisible && !_prologueActive && _activeSubtitle == null) return;
+            if (!_titleVisible && !_prologueActive) return;
             EnsureStyles();
             GUI.depth = -120;
             float scale = Mathf.Clamp(Screen.height / 1080f, 0.72f, 1.5f);
             ApplyStyleScale(scale);
             if (_titleVisible) DrawTitle(scale);
-            else if (_prologueActive) DrawPrologue(scale);
-            else DrawSubtitle(scale);
+            else DrawPrologue(scale);
         }
 
         private void DrawTitle(float scale)

@@ -120,6 +120,7 @@ namespace NinetyNineEditor
             ConfigureTexture("Assets/Resources/Art/opening_story_atlas_v1.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/horror_ui_panel_plate_v1.png", false, 2048);
             ConfigureTexture("Assets/Resources/Art/horror_ui_button_plate_v1.png", false, 2048);
+            ConfigureTexture("Assets/Resources/Art/ending_report_backdrop_v1.png", false, 2048);
 
             bool sceneExists = AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath) != null;
             if (!sceneExists)

@@ -55,6 +55,7 @@ namespace NinetyNine
         private FirstPersonController _player;
         private EvacuationAudio _audio;
         private EvacuationNarrativeUI _narrative;
+        private EvacuationRuntimeUI _runtimeUi;
         private EvacuationFloorDirector _floorDirector;
         private EvacuationStorySystem _story;
         private EvacuationFloorPlan _currentPlan;
@@ -88,6 +89,7 @@ namespace NinetyNine
         private float _objectiveRevealUntil;
         private float _controlsHintUntil;
         private float _powerNoticeUntil;
+        private float _endingShownAt;
         private float _masterVolume = 1f;
         private float _brightness = 1f;
         private int _currentFloor;
@@ -133,6 +135,7 @@ namespace NinetyNine
         private string _cachedHudFloorText = "99";
         private string _cachedHudPowerText = "16 / 30";
         private string _cachedHudTimeText = "20:00";
+        private string _endingRecordText = string.Empty;
         private float _floorMovementPenalty = 1f;
 
         public int RunSeed { get; private set; }
@@ -171,6 +174,9 @@ namespace NinetyNine
                 _uiPanelSkin, _uiButtonSkin, _font, StartPrologue, OpenTitleSettings, ExitFromTitle);
             BuildResolutionList();
             LoadPlayerSettings();
+            _runtimeUi = gameObject.AddComponent<EvacuationRuntimeUI>();
+            _runtimeUi.Initialize(_font, _uiPanelSkin, _uiButtonSkin,
+                Resources.Load<Texture2D>("Art/ending_report_backdrop_v1"), CreateUiActions());
             ShowTitle();
 #if !UNITY_EDITOR
             _showLauncherSettings = false;
@@ -217,7 +223,11 @@ namespace NinetyNine
             yield return new WaitForSecondsRealtime(4.5f);
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot,
                 "NarrativePrologueElevator.png"));
-            yield return new WaitForSecondsRealtime(7.2f);
+            while (_narrative.PrologueActive)
+            {
+                yield return null;
+            }
+            yield return new WaitForSecondsRealtime(0.35f);
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot,
                 "NarrativeGameplayThought.png"));
@@ -242,6 +252,7 @@ namespace NinetyNine
             System.IO.Directory.CreateDirectory(captureRoot);
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot, "EvacuationTitle.png"));
             yield return new WaitForSeconds(0.35f);
+            _narrative.ShowTitle(false);
             BeginRun();
             yield return new WaitForSeconds(3f);
             _player.ResetInsideCabin();
@@ -693,6 +704,7 @@ namespace NinetyNine
             Time.timeScale = 1f;
             yield return new WaitForSeconds(0.7f);
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(captureRoot, "EvacuationEnding.png"));
+            yield return new WaitForSecondsRealtime(0.35f);
             Debug.Log("EVACUATION_SPEED_TEST=" + (observedMaxSpeed <= MaxDescentSpeed + 0.01f ? "PASS" : "FAIL") +
                 " MAX=" + observedMaxSpeed.ToString("0.00"));
             Debug.Log("EVACUATION_DOOR_OPEN_TEST=" + (observedOpeningAnimation ? "PASS" : "FAIL"));
@@ -994,7 +1006,11 @@ namespace NinetyNine
             _loopCount = 0;
             _dialogueNpc = null;
             _dialogueText = string.Empty;
+            _endingTitle = string.Empty;
+            _endingBody = string.Empty;
             _endingDebrief = string.Empty;
+            _endingRecordText = string.Empty;
+            _endingShownAt = 0f;
             _focus = null;
             _slowUntil = 0f;
             _stimulantUntil = 0f;
@@ -2020,6 +2036,8 @@ namespace NinetyNine
             _player.CanMove = false;
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
+            PrepareEndingPresentation();
+            _audio.PlayVictory();
             LogRunResult("WIN", resolution.ToString());
         }
 
@@ -2049,6 +2067,7 @@ namespace NinetyNine
             _endingTitle = title;
             _endingBody = body;
             _endingDebrief = BuildDeathDebrief(title);
+            PrepareEndingPresentation();
             _player.CanMove = false;
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
@@ -2082,6 +2101,41 @@ namespace NinetyNine
                 " 层 · 线索 " + (_story != null ? _story.ClueCount : 0) + " · 救出 " + _rescued +
                 " · 剩余电量 " + Mathf.CeilToInt(_power) + " / " + Mathf.CeilToInt(MaxPower) +
                 "\n下一局建议：" + advice;
+        }
+
+        private void PrepareEndingPresentation()
+        {
+            const string bestFloorKey = "EvacuationBestFloor";
+            const string bestClueKey = "EvacuationBestClues";
+            const string bestRescueKey = "EvacuationBestRescues";
+            int clueCount = _story != null ? _story.ClueCount : 0;
+            int previousFloor = PlayerPrefs.GetInt(bestFloorKey, 100);
+            int previousClues = PlayerPrefs.GetInt(bestClueKey, -1);
+            int previousRescues = PlayerPrefs.GetInt(bestRescueKey, -1);
+            bool floorRecord = _currentFloor < previousFloor;
+            bool clueRecord = clueCount > previousClues;
+            bool rescueRecord = _rescued > previousRescues;
+
+            if (floorRecord) PlayerPrefs.SetInt(bestFloorKey, _currentFloor);
+            if (clueRecord) PlayerPrefs.SetInt(bestClueKey, clueCount);
+            if (rescueRecord) PlayerPrefs.SetInt(bestRescueKey, _rescued);
+            PlayerPrefs.Save();
+
+            List<string> records = new List<string>();
+            if (floorRecord) records.Add("最深楼层新纪录");
+            if (clueRecord) records.Add("线索新纪录");
+            if (rescueRecord && _rescued > 0) records.Add("救援新纪录");
+            if (records.Count > 0)
+            {
+                _endingRecordText = "新纪录 · " + string.Join("  ·  ", records);
+            }
+            else
+            {
+                _endingRecordText = "个人纪录 · 最深 " + PlayerPrefs.GetInt(bestFloorKey, _currentFloor).ToString("00") +
+                    "F  ·  线索 " + PlayerPrefs.GetInt(bestClueKey, clueCount) +
+                    "  ·  救出 " + PlayerPrefs.GetInt(bestRescueKey, _rescued);
+            }
+            _endingShownAt = Time.unscaledTime;
         }
 
         private void ChangePower(float targetPower, string reason, bool continuous)
@@ -2129,42 +2183,222 @@ namespace NinetyNine
             if (_narrative != null) _narrative.ShowBuildingMessage(value, duration);
         }
 
-        private void OnGUI()
+        private EvacuationUiActions CreateUiActions()
         {
-            EnsureStyles();
-            float scale = Mathf.Clamp(Screen.height / 1080f, 0.8f, 1.5f);
-            ApplyStyleScale(scale);
+            return new EvacuationUiActions
+            {
+                ChooseDialogue = ChooseNpcDialogue,
+                CloseSettings = CloseSettingsFromUi,
+                RetrySeed = () => BeginRun(true),
+                NewSeed = () => BeginRun(),
+                Quit = ExitFromTitle,
+                PreviousResolution = () => ShiftResolution(-1),
+                NextResolution = () => ShiftResolution(1),
+                ToggleFullscreen = () => _fullscreen = !_fullscreen,
+                ApplyResolution = ApplyDisplaySettings,
+                SetSensitivity = value => _player.LookSensitivity = value,
+                SetVolume = value =>
+                {
+                    _masterVolume = value;
+                    AudioListener.volume = value;
+                },
+                SetBrightness = value =>
+                {
+                    _brightness = value;
+                    AnalogPostEffect.DisplayBrightness = value;
+                }
+            };
+        }
+
+        private void CloseSettingsFromUi()
+        {
+            SavePlayerSettings();
             if (_phase == EvacuationPhase.Title)
             {
-                if (_showLauncherSettings)
-                {
-                    DrawSettingsPanel(scale, false);
-                }
-                return;
+                _showLauncherSettings = false;
+                _narrative.ShowTitle(true);
             }
-            if (_phase == EvacuationPhase.Prologue) return;
+            else
+            {
+                SetPaused(false);
+            }
+        }
 
-            DrawStatus(scale);
-            DrawObjective(scale);
-            DrawResourceWarnings(scale);
-            if (_paused)
+        private void ShiftResolution(int direction)
+        {
+            _resolutionIndex = (_resolutionIndex + direction + _supportedResolutions.Count) %
+                _supportedResolutions.Count;
+        }
+
+        private void LateUpdate()
+        {
+            if (_runtimeUi != null) _runtimeUi.Sync(BuildUiState());
+        }
+
+        private EvacuationUiState BuildUiState()
+        {
+            RefreshHudTelemetryText();
+            bool ending = _phase == EvacuationPhase.Won || _phase == EvacuationPhase.Lost;
+            bool gameplay = _phase != EvacuationPhase.Title && _phase != EvacuationPhase.Prologue && !ending;
+            bool initialBriefing = InitialBriefingVisible();
+            int passengerCount = 0;
+            for (int i = 0; i < _passengers.Count; i++)
             {
-                DrawSettingsPanel(scale, true);
-                return;
+                if (_passengers[i] != null) passengerCount++;
             }
-            if (_dialogueNpc != null)
+
+            string warning = BuildWarningText(out bool warningCritical);
+            string interaction = _player != null && _player.IsHidden
+                ? "[E]  离开藏身处"
+                : _focus != null ? "[E]  " + _focus.Label : string.Empty;
+            Vector2Int resolution = _supportedResolutions.Count > 0
+                ? _supportedResolutions[_resolutionIndex]
+                : new Vector2Int(Screen.width, Screen.height);
+            bool dialogueVisible = _dialogueNpc != null && !ending;
+            int clueCount = _story != null ? _story.ClueCount : 0;
+
+            return new EvacuationUiState
             {
-                DrawNpcDialogue(scale);
-                return;
-            }
-            if (_phase != EvacuationPhase.Won && _phase != EvacuationPhase.Lost)
+                GameplayVisible = gameplay,
+                DialogueVisible = dialogueVisible,
+                SettingsVisible = _paused || (_phase == EvacuationPhase.Title && _showLauncherSettings),
+                SettingsPaused = _paused,
+                EndingVisible = ending,
+                Won = _phase == EvacuationPhase.Won,
+                WarningVisible = !string.IsNullOrEmpty(warning),
+                WarningCritical = warningCritical,
+                ObjectiveVisible = gameplay && (initialBriefing || _notebookOpen || passengerCount > 0 ||
+                    Time.unscaledTime < _objectiveRevealUntil),
+                HealthVisible = _health < 99.5f,
+                StaminaVisible = _player != null && _player.Stamina01 < 0.98f,
+                FlashlightVisible = _hasFlashlight && (_flashlightOn || _flashCharge <= 20f),
+                CarryingVisible = _carryingCell,
+                ScrapVisible = _scrap > 0,
+                InteractionVisible = !string.IsNullOrEmpty(interaction),
+                ControlsVisible = gameplay && (initialBriefing || _notebookOpen ||
+                    Time.unscaledTime < _controlsHintUntil),
+                PowerNoticeVisible = Time.unscaledTime < _powerNoticeUntil &&
+                    !string.IsNullOrEmpty(_powerNoticeDeltaText),
+                PowerNoticePositive = _powerNoticePositive,
+                AdministratorOfferVisible = dialogueVisible && _dialogueNpc.CanOfferAdministratorDeal,
+                SubtitleVisible = gameplay && _narrative != null && _narrative.GameplaySubtitleVisible,
+                Floor = _cachedHudFloorText,
+                Power = _cachedHudPowerText,
+                Time = _cachedHudTimeText,
+                ElevatorStatus = CurrentElevatorStatus(),
+                PowerDelta = _powerNoticeDeltaText,
+                ObjectiveTitle = _notebookOpen ? "随身记录  [TAB 收起]" : "撤离目标  [TAB 查看]",
+                Objective = CurrentObjective(),
+                ObjectiveDetails = BuildObjectiveDetails(),
+                Warning = warning,
+                Health = "生命  " + Mathf.CeilToInt(_health),
+                Stamina = "体力  " + Mathf.CeilToInt(_player != null ? _player.Stamina01 * 100f : 0f),
+                Flashlight = "手电电量  " + Mathf.CeilToInt(_flashCharge),
+                Carrying = "双手搬运：" + (_carriedCellCharge >= FullCellCharge ? "完整电池" : "破损电池"),
+                Scrap = "可交易零件  " + _scrap,
+                Interaction = interaction,
+                Controls = _hasFlashlight ? ControlsWithFlashlight : ControlsWithoutFlashlight,
+                DialogueTitle = dialogueVisible ? _dialogueNpc.DisplayName + "  ·  信任 " +
+                    _dialogueNpc.Trust + "  恐惧 " + _dialogueNpc.Fear : string.Empty,
+                DialogueBody = _dialogueText,
+                DialogueFirstChoice = dialogueVisible && _dialogueNpc.IsOnboard
+                    ? "1  请他离开电梯" : "1  同意同行",
+                DialogueTradeChoice = "3  用零件交易电力（持有 " + _scrap + "）",
+                SettingsTitle = _paused ? "游戏已暂停" : "显示与操作设置",
+                Resolution = resolution.x + " × " + resolution.y,
+                Fullscreen = _fullscreen ? "全屏模式" : "窗口模式",
+                SubtitleSpeaker = _narrative != null ? _narrative.GameplaySubtitleSpeaker : string.Empty,
+                SubtitleBody = _narrative != null ? _narrative.GameplaySubtitleBody : string.Empty,
+                EndingOutcome = _phase == EvacuationPhase.Won ? "撤离档案 · 生还" : "撤离档案 · 行动终止",
+                EndingTitle = _endingTitle,
+                EndingBody = _endingBody,
+                EndingStats = "最深抵达  " + _currentFloor.ToString("00") + "F    ·    探索楼层  " +
+                    _floorsVisited + "\n收集线索  " + clueCount + " / 6    ·    救出人数  " + _rescued +
+                    "    ·    剩余电量  " + Mathf.CeilToInt(_power),
+                EndingPrompt = BuildEndingPrompt(clueCount),
+                EndingRecord = _endingRecordText,
+                EndingSeed = "楼层记录编号  " + RunSeed + "    R 重走 · ENTER 新种子",
+                Power01 = _power / MaxPower,
+                Health01 = _health / 100f,
+                Stamina01 = _player != null ? _player.Stamina01 : 0f,
+                WarningPulse = warningCritical
+                    ? 0.62f + Mathf.PingPong(Time.unscaledTime * 0.8f, 0.38f) : 0.92f,
+                EndingAge = Mathf.Max(0f, Time.unscaledTime - _endingShownAt),
+                Sensitivity = _player != null ? _player.LookSensitivity : 2f,
+                Volume = _masterVolume,
+                Brightness = _brightness,
+                SubtitleAlpha = _narrative != null ? _narrative.GameplaySubtitleAlpha : 0f,
+                SubtitleAccent = _narrative != null ? _narrative.GameplaySubtitleAccent : Color.white
+            };
+        }
+
+        private string BuildObjectiveDetails()
+        {
+            string details = string.Empty;
+            if (_notebookOpen && _story != null)
             {
-                DrawInteraction(scale);
+                details = _story.ActTitle() + " · 已发现 " + _story.ClueCount + " 条记录";
+                StoryClue latest = _story.LatestClue;
+                if (latest != null)
+                {
+                    details += "\n最近记录｜" + latest.Title + "\n" + latest.Excerpt;
+                }
             }
-            if (_phase == EvacuationPhase.Won || _phase == EvacuationPhase.Lost)
+            for (int i = 0; i < _passengers.Count; i++)
             {
-                DrawEnding(scale);
+                EvacuationNpc passenger = _passengers[i];
+                if (passenger == null) continue;
+                if (!string.IsNullOrEmpty(details)) details += "\n";
+                details += "护送：" + passenger.DisplayName + " · 目标 " + passenger.DestinationFloor + " 层";
             }
+            return details;
+        }
+
+        private string BuildWarningText(out bool critical)
+        {
+            critical = false;
+            if (_phase == EvacuationPhase.Won || _phase == EvacuationPhase.Lost) return string.Empty;
+            if (_power <= CriticalPowerWarning)
+            {
+                critical = true;
+                return "致命警告：电梯电量即将耗尽";
+            }
+            if (_remainingTime <= CriticalTimeWarning)
+            {
+                critical = true;
+                return "紧急：撤离窗口即将关闭  " + FormatRemainingTime();
+            }
+            if (_power <= LowPowerWarning)
+            {
+                return "警告：电梯电量不足  " + Mathf.CeilToInt(_power) + " / " + Mathf.CeilToInt(MaxPower);
+            }
+            if (_remainingTime <= LowTimeWarning)
+            {
+                return "警告：撤离时间不足  " + FormatRemainingTime();
+            }
+            return string.Empty;
+        }
+
+        private string FormatRemainingTime()
+        {
+            int minutes = Mathf.Max(0, Mathf.FloorToInt(_remainingTime / 60f));
+            int seconds = Mathf.Max(0, Mathf.FloorToInt(_remainingTime % 60f));
+            return minutes.ToString("00") + ":" + seconds.ToString("00");
+        }
+
+        private string BuildEndingPrompt(int clueCount)
+        {
+            if (_phase == EvacuationPhase.Won)
+            {
+                if (_endingTitle == "终止第 99 次循环")
+                    return "你看见了真正的清晨。但另一个种子里，大楼会重新排列所有楼层。";
+                return "大楼仍在运行。集齐 6 条线索并带一名幸存者离开，或许能终止循环。";
+            }
+            if (clueCount < 3)
+                return "下一次至少带回 3 条记录，否则一楼只会把你送回第 99 层。";
+            if (_currentFloor > 1)
+                return "距离一楼还剩 " + (_currentFloor - 1) + " 层。换个种子，物资与异常都会重新洗牌。";
+            return _endingDebrief.Replace("本次复盘：", string.Empty).Replace("\n下一局建议：", "  ·  ");
         }
 
         private void DrawStatus(float scale)
@@ -2343,7 +2577,7 @@ namespace NinetyNine
             if (_phase == EvacuationPhase.OpeningDoors) return mainGoal + "当前：等待电梯门完全打开。";
             if (_doorSeal > 0.98f) return mainGoal + "当前：使用下降按钮启动电梯。";
             if (!_player.IsInsideElevator) return mainGoal + "当前：搜索电池和线索，遇到危险立即撤回电梯。";
-            return mainGoal + "当前：探索楼层；准备离开时回到轿厢关闭电梯门。";
+            return mainGoal + "当前：探索楼层；离开前回到轿厢并关闭电梯门。";
         }
 
         private bool InitialBriefingVisible()

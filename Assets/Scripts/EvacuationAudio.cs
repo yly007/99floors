@@ -36,6 +36,7 @@ namespace NinetyNine
         private AudioClip _pickupClip;
         private AudioClip _hitClip;
         private AudioClip _deathClip;
+        private AudioClip _victoryClip;
         private AudioClip _flashlightClip;
         private AudioClip _threatClip;
         private AudioClip _phoneClip;
@@ -78,6 +79,7 @@ namespace NinetyNine
             _pickupClip = CreateToneSweep("Object Pickup", 260f, 620f, 0.16f, 0.22f);
             _hitClip = CreateNoiseImpact("Body Hit", 0.42f, 58f, 0.9f, 7701);
             _deathClip = CreateToneSweep("Fatal Drop", 105f, 21f, 2.2f, 0.7f);
+            _victoryClip = CreateToneSweep("Distant Arrival", 310f, 680f, 1.8f, 0.34f);
             _flashlightClip = CreateNoiseImpact("Flashlight Click", 0.07f, 1100f, 0.23f, 990);
             _threatClip = CreateToneSweep("Threat Sting", 190f, 41f, 0.75f, 0.48f);
             _phoneClip = CreatePhoneRing();
@@ -248,6 +250,12 @@ namespace NinetyNine
         public void PlayDeath()
         {
             _oneShot.PlayOneShot(_deathClip, 1f);
+        }
+
+        public void PlayVictory()
+        {
+            _oneShot.pitch = 1f;
+            _oneShot.PlayOneShot(_victoryClip, 0.72f);
         }
 
         public void PlayFlashlight()
