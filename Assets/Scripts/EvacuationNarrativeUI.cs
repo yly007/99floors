@@ -148,7 +148,7 @@ namespace NinetyNine
 
         public void ShowBuildingMessage(string body, float duration)
         {
-            ShowImmediate("大楼广播", body, duration, new Color(0.9f, 0.12f, 0.08f));
+            ShowImmediate("未知讯号", body, duration, new Color(0.9f, 0.12f, 0.08f));
         }
 
         public void ShowSystemMessage(string body, float duration)

@@ -569,7 +569,7 @@ namespace NinetyNine
                 new Vector3(0.08f, 2.55f, 0.035f), _brass, _cabin, false);
             CreateControl("下降", "启动下降（必须先关门）", EvacuationAction.Descend,
                 new Vector3(2.16f, 2.34f, 0.72f), _cyanGlow);
-            CreateControl("停止", "立即停车", EvacuationAction.Stop,
+            CreateControl("停止", "立即制动", EvacuationAction.Stop,
                 new Vector3(2.16f, 1.86f, 0.72f), _redGlow);
             CreateControl("门控", "开 / 关电梯门", EvacuationAction.Door,
                 new Vector3(2.16f, 1.38f, 0.72f), _amberGlow);

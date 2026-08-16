@@ -96,6 +96,7 @@ namespace NinetyNine
         private static readonly Color TextMuted = new Color(0.53f, 0.68f, 0.63f, 1f);
 
         private Font _font;
+        private Sprite _solidSprite;
         private Sprite _panelSprite;
         private Sprite _buttonSprite;
         private EvacuationUiActions _actions;
@@ -161,6 +162,7 @@ namespace NinetyNine
         {
             _font = font;
             _actions = actions;
+            _solidSprite = CreateSprite(Texture2D.whiteTexture, 0f);
             _panelSprite = CreateSprite(panelTexture, 42f);
             _buttonSprite = CreateSprite(buttonTexture, 28f);
 
@@ -617,7 +619,7 @@ namespace NinetyNine
             RectTransform rect = CreateRect(name, parent, new Vector2(0.5f, 0.5f),
                 new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(100f, 100f));
             Image image = rect.gameObject.AddComponent<Image>();
-            image.sprite = sprite;
+            image.sprite = sprite != null ? sprite : _solidSprite;
             image.color = color;
             image.type = sprite != null ? Image.Type.Sliced : Image.Type.Simple;
             return image;
