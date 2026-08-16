@@ -246,7 +246,7 @@ namespace NinetyNine
             _carryingText.text = state.Carrying;
             _scrapText.gameObject.SetActive(state.ScrapVisible);
             _scrapText.text = state.Scrap;
-            _reticle.color = state.InteractionVisible ? Teal : new Color(0.68f, 0.76f, 0.72f, 0.58f);
+            _reticle.color = state.InteractionVisible ? Color.white : new Color(1f, 1f, 1f, 0.68f);
             SetActive(_interactionRoot, state.InteractionVisible);
             _interactionText.text = state.Interaction;
             _controlsText.gameObject.SetActive(state.ControlsVisible);
@@ -347,9 +347,10 @@ namespace NinetyNine
             SetBox(_carryingText.rectTransform, new Vector2(1f, 1f), new Vector2(330f, 30f),
                 new Vector2(-185f, -34f));
 
-            _reticle = CreateImage("Interaction Reticle", _hudRoot.transform, null,
-                new Color(0.68f, 0.76f, 0.72f, 0.58f));
-            SetBox(_reticle.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(6f, 6f), Vector2.zero);
+            _reticle = CreateImage("Interaction Reticle", _hudRoot.transform, CreateReticleSprite(),
+                new Color(1f, 1f, 1f, 0.68f));
+            _reticle.type = Image.Type.Simple;
+            SetBox(_reticle.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(14f, 14f), Vector2.zero);
             Image interaction = CreateImage("Interaction Prompt", _hudRoot.transform, _panelSprite,
                 new Color(0.01f, 0.025f, 0.022f, 0.94f));
             _interactionRoot = interaction.gameObject;
@@ -687,6 +688,31 @@ namespace NinetyNine
             return Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height),
                 new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect,
                 new Vector4(safe, safe, safe, safe));
+        }
+
+        private static Sprite CreateReticleSprite()
+        {
+            const int size = 32;
+            Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            texture.name = "Interaction Reticle Texture";
+            texture.wrapMode = TextureWrapMode.Clamp;
+            texture.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+            Vector2 center = new Vector2((size - 1f) * 0.5f, (size - 1f) * 0.5f);
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float distance = Vector2.Distance(new Vector2(x, y), center);
+                    float outer = Mathf.Clamp01(14.5f - distance);
+                    float inner = Mathf.Clamp01(distance - 10.5f);
+                    pixels[y * size + x] = new Color(1f, 1f, 1f, outer * inner);
+                }
+            }
+            texture.SetPixels(pixels);
+            texture.Apply(false, true);
+            return Sprite.Create(texture, new Rect(0f, 0f, size, size),
+                new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
         }
 
         private static void SetActive(GameObject target, bool value)
