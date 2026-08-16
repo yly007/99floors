@@ -214,11 +214,18 @@ namespace NinetyNine
                     : mainPath[mainPath.Count - 1];
                 if (lowPower)
                 {
-                    Vector2Int recoveryCell = criticalPower
-                        ? mainPath[Mathf.Min(1, mainPath.Count - 1)]
-                        : mainPath[Mathf.Max(2, mainPath.Count / 2)];
-                    CreatePickup(EvacuationItemKind.EmergencyCell,
-                        CellPosition(recoveryCell) + new Vector3(0f, 0.34f, -0.35f));
+                    double recoveryChance = criticalPower ? 0.9 : 0.75;
+                    if (random.NextDouble() < recoveryChance)
+                    {
+                        int firstAvailableRoom = lockerCell.HasValue ? 1 : 0;
+                        bool useSideRoom = explorationRooms.Count > firstAvailableRoom &&
+                            random.NextDouble() < 0.55;
+                        Vector2Int recoveryCell = useSideRoom
+                            ? explorationRooms[random.Next(firstAvailableRoom, explorationRooms.Count)]
+                            : mainPath[random.Next(1, mainPath.Count - 1)];
+                        CreatePickup(EvacuationItemKind.EmergencyCell,
+                            CellPosition(recoveryCell) + new Vector3(0f, 0.34f, -0.35f));
+                    }
                     EvacuationItemKind deepReward = random.NextDouble() < 0.48
                         ? EvacuationItemKind.PowerCell : RandomSmallItem(random);
                     CreatePickup(deepReward,

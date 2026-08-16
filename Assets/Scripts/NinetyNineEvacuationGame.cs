@@ -27,7 +27,7 @@ namespace NinetyNine
             new Vector2Int(2560, 1440)
         };
         private const float MaxPower = 30f;
-        private const float StartCost = 4f;
+        private const float StartCost = 2f;
         private const float TravelCostPerFloor = 0.9f;
         private const float IdleDrain = 0.04f;
         private const float RunDuration = 1200f;
@@ -409,6 +409,7 @@ namespace NinetyNine
             Debug.Log("EVACUATION_STORY_ACT_TWO_TEST=" + (storyActTwoPassed ? "PASS" : "FAIL"));
             Debug.Log("EVACUATION_STORY_ACT_THREE_TEST=" + (storyActThreePassed ? "PASS" : "FAIL"));
             bool launchTuningPassed = Mathf.Approximately(MaxPower, 30f) &&
+                Mathf.Approximately(StartCost, 2f) &&
                 Mathf.Approximately(RunDuration, 1200f) && _power <= 16f && _power > 15.8f;
             bool highestQualityPassed = QualitySettings.names.Length == 0 ||
                 QualitySettings.GetQualityLevel() == QualitySettings.names.Length - 1;
