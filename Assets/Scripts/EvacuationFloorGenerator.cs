@@ -291,7 +291,7 @@ namespace NinetyNine
             {
                 _game.SetFloorMovementPenalty(1f);
             }
-            _audio.SetFloorMood((int)theme);
+            _audio.SetFloorMood(theme);
             RenderSettings.fogDensity = blackout ? 0.047f : distorted ? 0.034f : 0.022f;
             RenderSettings.fogColor = theme == EvacuationTheme.RedHall
                 ? new Color(0.065f, 0.004f, 0.004f)

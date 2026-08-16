@@ -16,6 +16,9 @@ namespace NinetyNine
         private readonly List<AudioLowPassFilter> _outsideFilters = new List<AudioLowPassFilter>();
         private FirstPersonController _player;
         private AudioSource _ambience;
+        private AudioSource _titleMusic;
+        private AudioSource _themeAmbienceA;
+        private AudioSource _themeAmbienceB;
         private AudioSource _machinery;
         private AudioSource _breathing;
         private AudioSource _oneShot;
@@ -23,6 +26,8 @@ namespace NinetyNine
         private AudioSource _heartbeat;
         private AudioSource _lowPowerAlarm;
         private AudioClip _ambientClip;
+        private AudioClip _titleClip;
+        private AudioClip[] _themeClips;
         private AudioClip _machineClip;
         private AudioClip _breathClip;
         private AudioClip _monsterClip;
@@ -59,6 +64,9 @@ namespace NinetyNine
         private float _power01 = 1f;
         private float _tension;
         private bool _criticalPower;
+        private bool _titleMode;
+        private bool _themeOnA;
+        private int _themeIndex = -1;
         private System.Random _random = new System.Random(9941);
         private AudioLowPassFilter _ambienceFilter;
 
@@ -66,6 +74,12 @@ namespace NinetyNine
         {
             _player = player;
             _ambientClip = CreateAmbient();
+            _titleClip = CreateTitleAmbience();
+            _themeClips = new AudioClip[System.Enum.GetValues(typeof(EvacuationTheme)).Length];
+            for (int i = 0; i < _themeClips.Length; i++)
+            {
+                _themeClips[i] = CreateThemeAmbience((EvacuationTheme)i);
+            }
             _machineClip = CreateMachine();
             _breathClip = CreateBreathing();
             _monsterClip = CreateMonsterBreath();
@@ -120,6 +134,17 @@ namespace NinetyNine
             _ambienceFilter = _ambience.gameObject.AddComponent<AudioLowPassFilter>();
             _ambience.clip = _ambientClip;
             _ambience.Play();
+            _titleMusic = CreateSource("Midnight Title Ambience", false, true, 0f);
+            _titleMusic.clip = _titleClip;
+            _titleMusic.Play();
+            _themeAmbienceA = CreateSource("Floor Theme Ambience A", false, true, 0f);
+            _themeAmbienceB = CreateSource("Floor Theme Ambience B", false, true, 0f);
+            AudioLowPassFilter themeFilterA = _themeAmbienceA.gameObject.AddComponent<AudioLowPassFilter>();
+            AudioLowPassFilter themeFilterB = _themeAmbienceB.gameObject.AddComponent<AudioLowPassFilter>();
+            themeFilterA.cutoffFrequency = 15000f;
+            themeFilterB.cutoffFrequency = 15000f;
+            _outsideFilters.Add(themeFilterA);
+            _outsideFilters.Add(themeFilterB);
             _machinery = CreateSource("Elevator Machinery", false, true, 0f);
             _machinery.clip = _machineClip;
             _machinery.Play();
@@ -155,6 +180,11 @@ namespace NinetyNine
             _random = new System.Random(unchecked(runSeed * 486187739) ^ 9941);
         }
 
+        public void SetTitleMode(bool active)
+        {
+            _titleMode = active;
+        }
+
         public void SetTravelling(bool travelling)
         {
             _travelling = travelling;
@@ -166,12 +196,22 @@ namespace NinetyNine
             }
         }
 
-        public void SetFloorMood(int mood)
+        public void SetFloorMood(EvacuationTheme theme)
         {
+            int mood = (int)theme;
             _mood = Mathf.Clamp01(mood / 5f);
-            _ambience.pitch = Mathf.Lerp(0.78f, 1.16f, Mathf.Repeat(mood * 0.37f, 1f));
+            _ambience.pitch = Mathf.Lerp(0.92f, 1.06f, Mathf.Repeat(mood * 0.37f, 1f));
             _surfaceIndex = mood == (int)EvacuationTheme.Maintenance ? 1 :
                 mood == (int)EvacuationTheme.Flooded ? 2 : 0;
+            if (_themeIndex == mood || _themeClips == null || mood >= _themeClips.Length)
+            {
+                return;
+            }
+            _themeIndex = mood;
+            AudioSource next = _themeOnA ? _themeAmbienceB : _themeAmbienceA;
+            next.clip = _themeClips[mood];
+            next.Play();
+            _themeOnA = !_themeOnA;
         }
 
         public void SetDoorSeal(float seal)
@@ -334,7 +374,17 @@ namespace NinetyNine
             }
             _machinery.volume = Mathf.MoveTowards(_machinery.volume, _targetMachineVolume,
                 Time.deltaTime * 0.7f);
-            _ambience.volume = (_travelling ? 0.11f : 0.25f) + _mood * (_travelling ? 0.06f : 0.16f);
+            float audioDelta = Mathf.Max(Time.unscaledDeltaTime, Time.deltaTime);
+            _titleMusic.volume = Mathf.MoveTowards(_titleMusic.volume, _titleMode ? 0.46f : 0f,
+                audioDelta * 0.2f);
+            float doorReveal = Mathf.Lerp(0.08f, 1f, 1f - _doorSeal);
+            float themeVolume = _titleMode ? 0f : (_travelling ? 0.025f : 0.28f + _mood * 0.12f) * doorReveal;
+            _themeAmbienceA.volume = Mathf.MoveTowards(_themeAmbienceA.volume,
+                _themeOnA ? themeVolume : 0f, audioDelta * 0.24f);
+            _themeAmbienceB.volume = Mathf.MoveTowards(_themeAmbienceB.volume,
+                _themeOnA ? 0f : themeVolume, audioDelta * 0.24f);
+            _ambience.volume = _titleMode ? 0.07f :
+                ((_travelling ? 0.1f : 0.19f) + _mood * (_travelling ? 0.04f : 0.09f));
             float exhaustion = 1f - _player.Stamina01;
             _breathing.volume = Mathf.Lerp(0f, 0.78f, Mathf.InverseLerp(0.38f, 0.94f, exhaustion));
             _breathing.pitch = Mathf.Lerp(0.82f, 1.35f, exhaustion);
@@ -443,6 +493,149 @@ namespace NinetyNine
                 samples[i] = (hum + pipe + filtered * 0.28f) * 0.72f;
             }
             AudioClip clip = AudioClip.Create("Abandoned Building Ambience", samples.Length, 1, rate, false);
+            clip.SetData(samples, 0);
+            return clip;
+        }
+
+        private static AudioClip CreateTitleAmbience()
+        {
+            const int rate = 22050;
+            const int seconds = 12;
+            int frames = rate * seconds;
+            float[] samples = new float[frames * 2];
+            System.Random random = new System.Random(2199);
+            float filteredLeft = 0f;
+            float filteredRight = 0f;
+            for (int i = 0; i < frames; i++)
+            {
+                float time = i / (float)rate;
+                filteredLeft = Mathf.Lerp(filteredLeft,
+                    (float)(random.NextDouble() * 2.0 - 1.0), 0.0025f);
+                filteredRight = Mathf.Lerp(filteredRight,
+                    (float)(random.NextDouble() * 2.0 - 1.0), 0.0025f);
+                float breathingRoom = 0.76f + Mathf.Sin(time * Mathf.PI * 2f / seconds) * 0.14f;
+                float drone = Mathf.Sin(time * Mathf.PI * 2f * 27.5f) * 0.16f;
+                drone += Mathf.Sin(time * Mathf.PI * 2f * 41.25f) * 0.07f;
+                float beatTime = Mathf.Repeat(time, 6f);
+                float bellProgress = Mathf.InverseLerp(2.2f, 3.8f, beatTime);
+                float bellEnvelope = beatTime >= 2.2f && beatTime <= 3.8f
+                    ? Mathf.Sin(bellProgress * Mathf.PI) * (1f - bellProgress) : 0f;
+                float bell = (Mathf.Sin(time * Mathf.PI * 2f * 82.5f) * 0.11f +
+                    Mathf.Sin(time * Mathf.PI * 2f * 165f) * 0.035f) * bellEnvelope;
+                float left = (drone * breathingRoom + bell + filteredLeft * 0.2f) * 0.62f;
+                float right = (drone * breathingRoom + bell * 0.78f + filteredRight * 0.2f) * 0.62f;
+                samples[i * 2] = Mathf.Clamp(left, -1f, 1f);
+                samples[i * 2 + 1] = Mathf.Clamp(right, -1f, 1f);
+            }
+            AudioClip clip = AudioClip.Create("Midnight Tower Title", frames, 2, rate, false);
+            clip.SetData(samples, 0);
+            return clip;
+        }
+
+        private static AudioClip CreateThemeAmbience(EvacuationTheme theme)
+        {
+            const int rate = 22050;
+            const int seconds = 10;
+            int frames = rate * seconds;
+            float[] samples = new float[frames * 2];
+            System.Random random = new System.Random(4100 + (int)theme * 977);
+            float filteredLeft = 0f;
+            float filteredRight = 0f;
+            float baseFrequency;
+            float secondFrequency;
+            float noiseAmount;
+            switch (theme)
+            {
+                case EvacuationTheme.Hospital:
+                    baseFrequency = 50f;
+                    secondFrequency = 100f;
+                    noiseAmount = 0.13f;
+                    break;
+                case EvacuationTheme.Office:
+                    baseFrequency = 60f;
+                    secondFrequency = 120f;
+                    noiseAmount = 0.1f;
+                    break;
+                case EvacuationTheme.Apartment:
+                    baseFrequency = 42f;
+                    secondFrequency = 63f;
+                    noiseAmount = 0.08f;
+                    break;
+                case EvacuationTheme.Maintenance:
+                    baseFrequency = 36f;
+                    secondFrequency = 72f;
+                    noiseAmount = 0.17f;
+                    break;
+                case EvacuationTheme.Flooded:
+                    baseFrequency = 31f;
+                    secondFrequency = 49f;
+                    noiseAmount = 0.2f;
+                    break;
+                default:
+                    baseFrequency = 27f;
+                    secondFrequency = 29f;
+                    noiseAmount = 0.19f;
+                    break;
+            }
+
+            for (int i = 0; i < frames; i++)
+            {
+                float time = i / (float)rate;
+                filteredLeft = Mathf.Lerp(filteredLeft,
+                    (float)(random.NextDouble() * 2.0 - 1.0), 0.004f);
+                filteredRight = Mathf.Lerp(filteredRight,
+                    (float)(random.NextDouble() * 2.0 - 1.0), 0.004f);
+                float hum = Mathf.Sin(time * Mathf.PI * 2f * baseFrequency) * 0.09f;
+                hum += Mathf.Sin(time * Mathf.PI * 2f * secondFrequency) * 0.04f;
+                float detailLeft = 0f;
+                float detailRight = 0f;
+                if (theme == EvacuationTheme.Hospital)
+                {
+                    float flicker = Mathf.Pow(Mathf.Max(0f,
+                        Mathf.Sin(time * Mathf.PI * 2f * 0.4f)), 10f);
+                    detailLeft = Mathf.Sin(time * Mathf.PI * 2f * 196f) * flicker * 0.07f;
+                    detailRight = detailLeft * 0.72f;
+                }
+                else if (theme == EvacuationTheme.Office)
+                {
+                    float serverCycle = 0.75f + Mathf.Sin(time * Mathf.PI * 2f * 0.2f) * 0.2f;
+                    detailLeft = Mathf.Sin(time * Mathf.PI * 2f * 180f) * serverCycle * 0.035f;
+                    detailRight = Mathf.Sin(time * Mathf.PI * 2f * 181f) * serverCycle * 0.035f;
+                }
+                else if (theme == EvacuationTheme.Apartment)
+                {
+                    float pipeCycle = 0.5f + Mathf.Sin(time * Mathf.PI * 2f * 0.1f) * 0.5f;
+                    detailLeft = Mathf.Sin(time * Mathf.PI * 2f * 84f) * pipeCycle * 0.055f;
+                    detailRight = Mathf.Sin(time * Mathf.PI * 2f * 63f) * pipeCycle * 0.04f;
+                }
+                else if (theme == EvacuationTheme.Maintenance)
+                {
+                    float strike = Mathf.Pow(Mathf.Max(0f,
+                        Mathf.Sin(time * Mathf.PI * 2f * 0.2f)), 22f);
+                    detailLeft = Mathf.Sin(time * Mathf.PI * 2f * 311f) * strike * 0.14f;
+                    detailRight = Mathf.Sin(time * Mathf.PI * 2f * 233f) * strike * 0.09f;
+                }
+                else if (theme == EvacuationTheme.Flooded)
+                {
+                    float dripLeft = Mathf.Pow(Mathf.Max(0f,
+                        Mathf.Sin(time * Mathf.PI * 2f * 0.7f)), 42f);
+                    float dripRight = Mathf.Pow(Mathf.Max(0f,
+                        Mathf.Sin((time + 0.43f) * Mathf.PI * 2f * 0.5f)), 46f);
+                    detailLeft = Mathf.Sin(time * Mathf.PI * 2f * 930f) * dripLeft * 0.15f;
+                    detailRight = Mathf.Sin(time * Mathf.PI * 2f * 760f) * dripRight * 0.13f;
+                }
+                else
+                {
+                    float breath = 0.4f + Mathf.Sin(time * Mathf.PI * 2f * 0.1f) * 0.4f;
+                    detailLeft = filteredLeft * breath * 0.16f;
+                    detailRight = -filteredRight * breath * 0.16f;
+                }
+                float left = hum + filteredLeft * noiseAmount + detailLeft;
+                float right = hum * 0.92f + filteredRight * noiseAmount + detailRight;
+                samples[i * 2] = Mathf.Clamp(left * 0.72f, -1f, 1f);
+                samples[i * 2 + 1] = Mathf.Clamp(right * 0.72f, -1f, 1f);
+            }
+            AudioClip clip = AudioClip.Create(theme + " Floor Ambience", frames, 2, rate, false);
             clip.SetData(samples, 0);
             return clip;
         }

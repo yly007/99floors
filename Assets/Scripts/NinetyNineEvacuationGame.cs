@@ -829,6 +829,7 @@ namespace NinetyNine
             Time.timeScale = 1f;
             _paused = false;
             _phase = EvacuationPhase.Title;
+            _audio.SetTitleMode(true);
             _player.CanMove = false;
             _player.ResetInsideCabin();
             Cursor.lockState = CursorLockMode.None;
@@ -840,6 +841,7 @@ namespace NinetyNine
         {
             if (_phase != EvacuationPhase.Title || _showLauncherSettings) return;
             _phase = EvacuationPhase.Prologue;
+            _audio.SetTitleMode(true);
             _player.CanMove = false;
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = false;
@@ -961,6 +963,7 @@ namespace NinetyNine
         private void BeginRun(bool reuseSeed = false)
         {
             SetPaused(false);
+            _audio.SetTitleMode(false);
             if (!reuseSeed)
             {
                 RunSeed = unchecked(Environment.TickCount * 397) ^ DateTime.Now.Millisecond;
