@@ -411,7 +411,7 @@ namespace NinetyNine
                 _oneShot.pitch = RandomRange(0.88f, 1.08f);
                 AudioClip step = _surfaceIndex == 1 ? RandomClip(_metalStepVariants) :
                     _surfaceIndex == 2 ? RandomClip(_wetStepVariants) : RandomClip(_stepVariants);
-                _oneShot.PlayOneShot(step, _player.IsSprinting ? 0.48f : 0.27f);
+                _oneShot.PlayOneShot(step, _player.IsSprinting ? 0.56f : 0.34f);
             }
             if (!_travelling && Time.time >= _nextDistantKnock)
             {

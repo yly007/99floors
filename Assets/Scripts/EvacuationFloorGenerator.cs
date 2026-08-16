@@ -422,10 +422,10 @@ namespace NinetyNine
                     ? new Color(1f, 0.45f, 0.055f)
                     : new Color(0.06f, 1f, 0.65f);
             Color color = danger ? new Color(1f, 0.03f, 0.01f) :
-                active ? activeColor : activeColor * 0.16f;
+                active ? activeColor : activeColor * 0.055f;
             renderer.sharedMaterial.color = color;
             renderer.sharedMaterial.EnableKeyword("_EMISSION");
-            renderer.sharedMaterial.SetColor("_EmissionColor", color * 3.4f);
+            renderer.sharedMaterial.SetColor("_EmissionColor", color * 1.8f);
         }
 
         public void SetParasiteActive(bool active)
@@ -1264,8 +1264,12 @@ namespace NinetyNine
         private Transform CreateControlIndicator(EvacuationAction action, Transform root, Material glow)
         {
             Material indicatorMaterial = new Material(glow);
-            return Box("StateLamp", new Vector3(0.3f, -0.145f, -0.066f),
-                new Vector3(0.075f, 0.022f, 0.014f), indicatorMaterial, root, false);
+            Cylinder("StateLampRecess", new Vector3(0.3f, -0.145f, -0.052f),
+                new Vector3(0.034f, 0.007f, 0.034f), _black, root, false,
+                new Vector3(90f, 0f, 0f));
+            return Cylinder("StateLamp", new Vector3(0.3f, -0.145f, -0.061f),
+                new Vector3(0.022f, 0.005f, 0.022f), indicatorMaterial, root, false,
+                new Vector3(90f, 0f, 0f));
         }
 
         private void ClearFloor()

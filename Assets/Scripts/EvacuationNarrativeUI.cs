@@ -293,40 +293,41 @@ namespace NinetyNine
 
             float left = Screen.width * 0.075f;
             float contentWidth = Mathf.Min(Screen.width * 0.35f, 560f * scale);
-            DrawPanelPlate(new Rect(left - 30f * scale, Screen.height * 0.17f,
-                contentWidth + 56f * scale, Screen.height * 0.64f),
+            float buttonWidth = Mathf.Min(contentWidth * 0.78f, 410f * scale);
+            DrawPanelPlate(new Rect(left - 24f * scale, Screen.height * 0.14f,
+                contentWidth + 48f * scale, Screen.height * 0.75f),
                 new Color(0.16f, 0.2f, 0.19f, 0.53f));
-            DrawTint(new Rect(left - 14f * scale, Screen.height * 0.23f,
-                3f * scale, Screen.height * 0.48f), new Color(0.69f, 0.12f, 0.09f, 0.88f));
+            DrawTint(new Rect(left - 12f * scale, Screen.height * 0.205f,
+                3f * scale, Screen.height * 0.66f), new Color(0.69f, 0.12f, 0.09f, 0.88f));
 
             if (_titleWordmark != null)
             {
-                GUI.DrawTextureWithTexCoords(new Rect(left - 4f * scale, Screen.height * 0.3f,
-                    contentWidth + 46f * scale, 116f * scale), _titleWordmark,
+                GUI.DrawTextureWithTexCoords(new Rect(left, Screen.height * 0.27f,
+                    contentWidth, 116f * scale), _titleWordmark,
                     new Rect(0f, 0.18f, 1f, 0.64f), true);
             }
             else
             {
-                GUI.Label(new Rect(left - 2f * scale, Screen.height * 0.3f,
-                    contentWidth + 40f * scale, 112f * scale), "逃离午夜大楼", _titleStyle);
+                GUI.Label(new Rect(left, Screen.height * 0.27f,
+                    contentWidth, 112f * scale), "逃离午夜大楼", _titleStyle);
             }
-            GUI.Label(new Rect(left, Screen.height * 0.438f,
+            GUI.Label(new Rect(left, Screen.height * 0.42f,
                 contentWidth, 76f * scale),
                 "你已经加班太久，久到这栋大楼忘了让你离开。", _taglineStyle);
-            GUI.Label(new Rect(left, Screen.height * 0.525f,
+            GUI.Label(new Rect(left, Screen.height * 0.51f,
                 contentWidth, 26f * scale), "你能逃出生天吗？", _titleWarningStyle);
-            GUI.Label(new Rect(left, Screen.height * 0.555f,
-                contentWidth, 24f * scale), "推荐佩戴耳机游玩", _hintStyle);
 
-            if (GUI.Button(new Rect(left, Screen.height * 0.595f,
-                330f * scale, 58f * scale), "进入电梯", _primaryButtonStyle))
+            if (GUI.Button(new Rect(left, Screen.height * 0.575f,
+                buttonWidth, 58f * scale), "进入电梯", _primaryButtonStyle))
                 _beginAction?.Invoke();
-            if (GUI.Button(new Rect(left, Screen.height * 0.685f,
-                330f * scale, 54f * scale), "调整终端", _buttonStyle))
+            if (GUI.Button(new Rect(left, Screen.height * 0.67f,
+                buttonWidth, 54f * scale), "调整终端", _buttonStyle))
                 _settingsAction?.Invoke();
-            if (GUI.Button(new Rect(left, Screen.height * 0.77f,
-                330f * scale, 54f * scale), "离开大楼", _buttonStyle))
+            if (GUI.Button(new Rect(left, Screen.height * 0.765f,
+                buttonWidth, 54f * scale), "离开大楼", _buttonStyle))
                 _quitAction?.Invoke();
+            GUI.Label(new Rect(left, Screen.height * 0.84f,
+                buttonWidth, 24f * scale), "推荐佩戴耳机游玩", _hintStyle);
             float flicker = Mathf.Clamp01((Mathf.Sin(Time.unscaledTime * 1.7f) - 0.955f) / 0.045f);
             if (flicker > 0f)
             {
