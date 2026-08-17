@@ -491,11 +491,11 @@ namespace NinetyNine
             _endingSeed = CreateText("Ending Seed", root, string.Empty, 17,
                 TextAnchor.MiddleRight, TextMuted, new Vector2(505f, -426f), new Vector2(520f, 30f));
 
-            CreateButton("New Seed", root, "换一栋，再下去", new Vector2(-515f, -374f),
+            CreateEndingButton("New Seed", root, "重新撤离", new Vector2(-515f, -374f),
                 new Vector2(500f, 78f), _actions.NewSeed, out Text newSeedLabel);
             newSeedLabel.fontSize = 25;
             newSeedLabel.color = Teal;
-            CreateButton("Retry Same Seed", root, "不服，重走这栋", new Vector2(85f, -374f),
+            CreateEndingButton("Retry Same Seed", root, "重返现场", new Vector2(85f, -374f),
                 new Vector2(500f, 78f), _actions.RetrySeed, out Text retryLabel);
             retryLabel.fontSize = 23;
         }
@@ -602,6 +602,27 @@ namespace NinetyNine
             button.colors = colors;
             button.onClick.AddListener(() => callback());
             text = CreateText("Label", image.transform, label, 18, TextAnchor.MiddleCenter, TextPrimary);
+            Stretch(text.rectTransform, 12f, 5f, 12f, 5f);
+            return button;
+        }
+
+        private Button CreateEndingButton(string name, Transform parent, string label,
+            Vector2 position, Vector2 size, Action callback, out Text text)
+        {
+            Image hitArea = CreateImage(name, parent, null, Color.clear);
+            SetBox(hitArea.rectTransform, new Vector2(0.5f, 0.5f), size, position);
+            Button button = hitArea.gameObject.AddComponent<Button>();
+            button.targetGraphic = hitArea;
+            ColorBlock colors = button.colors;
+            colors.normalColor = Color.clear;
+            colors.highlightedColor = new Color(0.08f, 0.22f, 0.18f, 0.28f);
+            colors.pressedColor = new Color(0.16f, 0.38f, 0.3f, 0.34f);
+            colors.selectedColor = colors.highlightedColor;
+            colors.disabledColor = Color.clear;
+            colors.fadeDuration = 0.08f;
+            button.colors = colors;
+            button.onClick.AddListener(() => callback());
+            text = CreateText("Label", hitArea.transform, label, 18, TextAnchor.MiddleCenter, TextPrimary);
             Stretch(text.rectTransform, 12f, 5f, 12f, 5f);
             return button;
         }

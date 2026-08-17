@@ -2337,12 +2337,11 @@ namespace NinetyNine
                 EndingTitle = _endingTitle,
                 EndingBody = _endingBody,
                 EndingStats = "最深抵达  " + _currentFloor.ToString("00") + "F    ·    探索楼层  " +
-                    _floorsVisited + "\n收集线索  " + clueCount + " / " +
-                    EvacuationStorySystem.TrueExitClues + "    ·    救出人数  " + _rescued +
+                    _floorsVisited + "\n收集线索  " + clueCount + "    ·    救出人数  " + _rescued +
                     "    ·    剩余电量  " + Mathf.CeilToInt(_power),
                 EndingPrompt = BuildEndingPrompt(clueCount),
                 EndingRecord = _endingRecordText,
-                EndingSeed = "楼层记录编号  " + RunSeed + "    R 重走 · ENTER 新种子",
+                EndingSeed = "档案编号  " + RunSeed,
                 Power01 = _power / MaxPower,
                 Health01 = _health / 100f,
                 Stamina01 = _player != null ? _player.Stamina01 : 0f,
@@ -2426,15 +2425,14 @@ namespace NinetyNine
             if (_phase == EvacuationPhase.Won)
             {
                 if (_endingTitle == "终止第 99 次循环")
-                    return "你看见了真正的清晨。但另一个种子里，大楼会重新排列所有楼层。";
-                return "大楼仍在运行。集齐 " + EvacuationStorySystem.TrueExitClues +
-                    " 条线索并带一名幸存者离开，或许能终止循环。";
+                    return "你看见了真正的清晨。身后的电梯门缓缓合拢，再也没有亮起。";
+                return "你离开了大楼，但某些记录仍被锁在楼层深处。身后的电梯还在运行。";
             }
             if (clueCount < EvacuationStorySystem.MinimumExitClues)
-                return "下一次至少带回 " + EvacuationStorySystem.MinimumExitClues +
-                    " 条记录，否则一楼只会把你送回第 99 层。";
+                return "你带回的记录不足以还原真相。大楼仍有不愿被看见的证据。";
             if (_currentFloor > 1)
-                return "距离一楼还剩 " + (_currentFloor - 1) + " 层。换个种子，物资与异常都会重新洗牌。";
+                return "撤离终止在距离一楼还有 " + (_currentFloor - 1) +
+                    " 层的位置。电梯仍在等待下一次启动。";
             return _endingDebrief.Replace("本次复盘：", string.Empty).Replace("\n下一局建议：", "  ·  ");
         }
 
