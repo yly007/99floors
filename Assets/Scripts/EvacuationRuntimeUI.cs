@@ -147,6 +147,7 @@ namespace NinetyNine
         private Slider _volumeSlider;
         private Slider _brightnessSlider;
         private Button _retrySettingsButton;
+        private Button _quitSettingsButton;
         private Text _endingOutcome;
         private Text _endingTitle;
         private Text _endingBody;
@@ -409,13 +410,13 @@ namespace NinetyNine
             for (int i = 0; i < 4; i++)
             {
                 int choice = i + 1;
-                Vector2 position = new Vector2(i % 2 == 0 ? -310f : 310f, i < 2 ? -220f : -284f);
+                Vector2 position = new Vector2(i % 2 == 0 ? -310f : 310f, i < 2 ? -20f : -84f);
                 _dialogueButtons[i] = CreateButton("Dialogue Choice " + choice, panel.transform,
                     labels[i], position, new Vector2(590f, 50f), () => _actions.ChooseDialogue(choice),
                     out _dialogueButtonLabels[i]);
             }
             _dialogueButtons[4] = CreateButton("Administrator Choice", panel.transform, labels[4],
-                new Vector2(0f, -350f), new Vector2(1210f, 46f),
+                new Vector2(0f, -148f), new Vector2(1210f, 46f),
                 () => _actions.ChooseDialogue(5), out _dialogueButtonLabels[4]);
         }
 
@@ -433,32 +434,32 @@ namespace NinetyNine
                 TextAnchor.MiddleLeft, Amber);
             SetBox(_settingsTitle.rectTransform, new Vector2(0.5f, 1f), new Vector2(670f, 54f),
                 new Vector2(0f, -48f));
-            _sensitivitySlider = CreateSettingSlider(panel.transform, "鼠标灵敏度", -108f, 0.8f, 5f,
+            _sensitivitySlider = CreateSettingSlider(panel.transform, "鼠标灵敏度", 180f, 0.8f, 5f,
                 _actions.SetSensitivity);
-            _volumeSlider = CreateSettingSlider(panel.transform, "总音量", -178f, 0f, 1f,
+            _volumeSlider = CreateSettingSlider(panel.transform, "总音量", 100f, 0f, 1f,
                 _actions.SetVolume);
-            _brightnessSlider = CreateSettingSlider(panel.transform, "画面亮度", -248f, 0.72f, 1.35f,
+            _brightnessSlider = CreateSettingSlider(panel.transform, "画面亮度", 20f, 0.72f, 1.35f,
                 _actions.SetBrightness);
 
             CreateText("Resolution Label", panel.transform, "显示分辨率", 19,
-                TextAnchor.MiddleLeft, TextPrimary, new Vector2(-250f, -322f), new Vector2(170f, 42f));
-            CreateButton("Previous Resolution", panel.transform, "‹", new Vector2(-95f, -322f),
+                TextAnchor.MiddleLeft, TextPrimary, new Vector2(-250f, -70f), new Vector2(170f, 42f));
+            CreateButton("Previous Resolution", panel.transform, "‹", new Vector2(-95f, -70f),
                 new Vector2(48f, 42f), _actions.PreviousResolution, out _);
             _resolutionText = CreateText("Resolution", panel.transform, string.Empty, 18,
-                TextAnchor.MiddleCenter, TextPrimary, new Vector2(35f, -322f), new Vector2(190f, 42f));
-            CreateButton("Next Resolution", panel.transform, "›", new Vector2(165f, -322f),
+                TextAnchor.MiddleCenter, TextPrimary, new Vector2(35f, -70f), new Vector2(190f, 42f));
+            CreateButton("Next Resolution", panel.transform, "›", new Vector2(165f, -70f),
                 new Vector2(48f, 42f), _actions.NextResolution, out _);
             Button fullscreen = CreateButton("Fullscreen", panel.transform, string.Empty,
-                new Vector2(275f, -322f), new Vector2(150f, 42f), _actions.ToggleFullscreen,
+                new Vector2(275f, -70f), new Vector2(150f, 42f), _actions.ToggleFullscreen,
                 out _fullscreenText);
             fullscreen.navigation = new Navigation { mode = Navigation.Mode.Automatic };
-            CreateButton("Apply Resolution", panel.transform, "应用显示设置", new Vector2(-180f, -392f),
+            CreateButton("Apply Resolution", panel.transform, "应用显示设置", new Vector2(-180f, -140f),
                 new Vector2(300f, 48f), _actions.ApplyResolution, out _);
-            CreateButton("Close Settings", panel.transform, "继续 / 返回", new Vector2(180f, -392f),
+            CreateButton("Close Settings", panel.transform, "继续 / 返回", new Vector2(180f, -140f),
                 new Vector2(300f, 48f), _actions.CloseSettings, out _);
             _retrySettingsButton = CreateButton("Retry Seed", panel.transform, "重开当前种子",
-                new Vector2(-180f, -464f), new Vector2(300f, 46f), _actions.RetrySeed, out _);
-            CreateButton("Quit", panel.transform, "退出游戏", new Vector2(180f, -464f),
+                new Vector2(-180f, -210f), new Vector2(300f, 46f), _actions.RetrySeed, out _);
+            _quitSettingsButton = CreateButton("Quit", panel.transform, "退出游戏", new Vector2(180f, -210f),
                 new Vector2(300f, 46f), _actions.Quit, out _);
         }
 
@@ -474,21 +475,21 @@ namespace NinetyNine
             Image dim = CreateImage("Ending Contrast", root, null, new Color(0f, 0f, 0f, 0.18f));
             Stretch(dim.rectTransform, 0f, 0f, 0f, 0f);
 
-            _endingOutcome = CreateText("Ending Outcome", root, string.Empty, 23,
+            _endingOutcome = CreateText("Ending Outcome", root, string.Empty, 26,
                 TextAnchor.MiddleLeft, Red, new Vector2(-520f, 382f), new Vector2(760f, 38f));
-            _endingTitle = CreateText("Ending Title", root, string.Empty, 48,
+            _endingTitle = CreateText("Ending Title", root, string.Empty, 52,
                 TextAnchor.MiddleLeft, TextPrimary, new Vector2(-520f, 318f), new Vector2(760f, 72f));
-            _endingBody = CreateText("Ending Body", root, string.Empty, 24,
+            _endingBody = CreateText("Ending Body", root, string.Empty, 26,
                 TextAnchor.UpperLeft, new Color(0.76f, 0.8f, 0.76f, 1f),
                 new Vector2(-520f, 210f), new Vector2(760f, 120f));
-            _endingStats = CreateText("Ending Stats", root, string.Empty, 23,
+            _endingStats = CreateText("Ending Stats", root, string.Empty, 25,
                 TextAnchor.UpperLeft, TextPrimary, new Vector2(-520f, 68f), new Vector2(760f, 118f));
-            _endingRecord = CreateText("Ending Record", root, string.Empty, 19,
+            _endingRecord = CreateText("Ending Record", root, string.Empty, 22,
                 TextAnchor.MiddleLeft, Amber, new Vector2(-520f, -38f), new Vector2(760f, 42f));
-            _endingPrompt = CreateText("Ending Prompt", root, string.Empty, 19,
-                TextAnchor.MiddleLeft, TextMuted, new Vector2(-520f, -86f), new Vector2(760f, 52f));
-            _endingSeed = CreateText("Ending Seed", root, string.Empty, 14,
-                TextAnchor.MiddleRight, TextMuted, new Vector2(505f, -438f), new Vector2(520f, 30f));
+            _endingPrompt = CreateText("Ending Prompt", root, string.Empty, 21,
+                TextAnchor.MiddleLeft, TextMuted, new Vector2(-520f, -98f), new Vector2(760f, 72f));
+            _endingSeed = CreateText("Ending Seed", root, string.Empty, 17,
+                TextAnchor.MiddleRight, TextMuted, new Vector2(505f, -426f), new Vector2(520f, 30f));
 
             CreateButton("New Seed", root, "换一栋，再下去", new Vector2(-515f, -374f),
                 new Vector2(500f, 78f), _actions.NewSeed, out Text newSeedLabel);
@@ -513,6 +514,8 @@ namespace NinetyNine
             _resolutionText.text = state.Resolution;
             _fullscreenText.text = state.Fullscreen;
             _retrySettingsButton.gameObject.SetActive(state.SettingsPaused);
+            _quitSettingsButton.GetComponent<RectTransform>().anchoredPosition = state.SettingsPaused
+                ? new Vector2(180f, -210f) : new Vector2(0f, -210f);
         }
 
         private void SyncEnding(EvacuationUiState state)
