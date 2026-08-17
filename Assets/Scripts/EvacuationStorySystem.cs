@@ -34,6 +34,9 @@ namespace NinetyNine
 
     public sealed class EvacuationStorySystem
     {
+        public const int MinimumExitClues = 3;
+        public const int TrueExitClues = 6;
+
         private readonly HashSet<string> _clues = new HashSet<string>();
         private readonly List<StoryClue> _records = new List<StoryClue>();
 
@@ -132,8 +135,8 @@ namespace NinetyNine
         {
             if (carriesMimic) return ExitResolution.MimicTakeover;
             if (acceptedAdministrator) return ExitResolution.NewAdministrator;
-            if (_clues.Count < 3) return ExitResolution.FalseLoop;
-            if (_clues.Count >= 6 && rescued >= 1 && !carriesMimic)
+            if (_clues.Count < MinimumExitClues) return ExitResolution.FalseLoop;
+            if (_clues.Count >= TrueExitClues && rescued >= 1 && !carriesMimic)
             {
                 return ExitResolution.ShutDownBuilding;
             }

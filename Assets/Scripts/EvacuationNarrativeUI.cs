@@ -77,8 +77,8 @@ namespace NinetyNine
         }
 
         public void Initialize(Texture2D storyAtlas, Texture2D titleHero, Texture2D titleWordmark,
-            Texture2D panelSkin, Texture2D buttonSkin, Font font, Action beginAction, Action settingsAction,
-            Action quitAction)
+            Texture2D panelSkin, Texture2D buttonSkin, Font font, float runDuration,
+            Action beginAction, Action settingsAction, Action quitAction)
         {
             _storyAtlas = storyAtlas;
             _titleHero = titleHero;
@@ -89,14 +89,18 @@ namespace NinetyNine
             _beginAction = beginAction;
             _settingsAction = settingsAction;
             _quitAction = quitAction;
+            int durationSeconds = Mathf.Max(0, Mathf.RoundToInt(runDuration));
+            string durationText = (durationSeconds / 60).ToString("00") + ":" +
+                (durationSeconds % 60).ToString("00");
             _beats = new[]
             {
                 new PrologueBeat(0, "02:17 · 顶层办公室",
                     "凌晨两点十七分，最后一份文件终于发了出去。\n整层楼已经空了，只有走廊尽头的电梯门还开着，像在等我。", 5.3f),
                 new PrologueBeat(1, "出口失效",
                     "我本想走消防楼梯离开。推开安全门，门后却不是楼梯间，\n而是一段从没见过的走廊。回头时，来路也不见了。", 5.5f),
-                new PrologueBeat(2, "20:00 · 倒计时",
-                    "手机依旧没有信号。电梯上方的显示屏忽然亮起，数字从20:00开始倒数。\n同一刻，走廊的灯一盏接一盏熄灭。我不知道归零后会发生什么。", 5.7f),
+                new PrologueBeat(2, durationText + " · 倒计时",
+                    "手机依旧没有信号。电梯上方的显示屏忽然亮起，数字从" + durationText +
+                    "开始倒数。\n同一刻，走廊的灯一盏接一盏熄灭。我不知道归零后会发生什么。", 5.7f),
                 new PrologueBeat(3, "唯一的路",
                     "大厅里只剩这部电梯还能启动，但它的电量不够直达一楼。\n去楼层里找电池，边下行，边找到离开的办法。", 5.6f)
             };

@@ -27,6 +27,7 @@ namespace NinetyNine
             new Vector2Int(2560, 1440)
         };
         private const float MaxPower = 30f;
+        private const float InitialPower = 16f;
         private const float StartCost = 2f;
         private const float TravelCostPerFloor = 0.9f;
         private const float IdleDrain = 0.04f;
@@ -37,6 +38,12 @@ namespace NinetyNine
         private const float MonsterRepelCost = 2.5f;
         private const float FullCellCharge = 12f;
         private const float EmergencyCellCharge = 6f;
+        private const float FusePowerRefund = 3f;
+        private const float ScrapExchangePower = 4f;
+        private const float FlashExchangePower = 2.5f;
+        private const float FlashExchangeCost = 15f;
+        private const float ParasiteRemovalDamage = 6f;
+        private const float PassengerTradePower = 3.5f;
         private const int MaxDoorIntegrity = 2;
         private const float InteractionDistance = 3f;
         private const float LowPowerWarning = 8f;
@@ -133,8 +140,8 @@ namespace NinetyNine
         private string _powerNoticeText = string.Empty;
         private string _powerNoticeDeltaText = string.Empty;
         private string _cachedHudFloorText = "99";
-        private string _cachedHudPowerText = "16 / 30";
-        private string _cachedHudTimeText = "20:00";
+        private string _cachedHudPowerText = string.Empty;
+        private string _cachedHudTimeText = string.Empty;
         private string _endingRecordText = string.Empty;
         private float _floorMovementPenalty = 1f;
 
@@ -171,7 +178,8 @@ namespace NinetyNine
             _narrative.Initialize(Resources.Load<Texture2D>("Art/opening_story_atlas_v1"),
                 Resources.Load<Texture2D>("Art/title_midnight_tower_hero_v2"),
                 Resources.Load<Texture2D>("Art/title_midnight_tower_wordmark_v1"),
-                _uiPanelSkin, _uiButtonSkin, _font, StartPrologue, OpenTitleSettings, ExitFromTitle);
+                _uiPanelSkin, _uiButtonSkin, _font, RunDuration, StartPrologue, OpenTitleSettings,
+                ExitFromTitle);
             BuildResolutionList();
             LoadPlayerSettings();
             _runtimeUi = gameObject.AddComponent<EvacuationRuntimeUI>();
@@ -410,7 +418,8 @@ namespace NinetyNine
             Debug.Log("EVACUATION_STORY_ACT_THREE_TEST=" + (storyActThreePassed ? "PASS" : "FAIL"));
             bool launchTuningPassed = Mathf.Approximately(MaxPower, 30f) &&
                 Mathf.Approximately(StartCost, 2f) &&
-                Mathf.Approximately(RunDuration, 1200f) && _power <= 16f && _power > 15.8f;
+                Mathf.Approximately(RunDuration, 1200f) && _power <= InitialPower &&
+                _power > InitialPower - 0.2f;
             bool highestQualityPassed = QualitySettings.names.Length == 0 ||
                 QualitySettings.GetQualityLevel() == QualitySettings.names.Length - 1;
             Debug.Log("EVACUATION_LAUNCH_TUNING_TEST=" + (launchTuningPassed ? "PASS" : "FAIL"));
@@ -981,7 +990,7 @@ namespace NinetyNine
             _currentFloor = 99;
             _floorFloat = 99f;
             _departureFloor = 99;
-            _power = 16f;
+            _power = InitialPower;
             _lastPowerNoticeBucket = Mathf.CeilToInt(_power);
             _powerNoticeUntil = 0f;
             _powerNoticeText = string.Empty;
@@ -1041,7 +1050,8 @@ namespace NinetyNine
             _controlsHintUntil = Time.unscaledTime + 12f;
             _narrative.ClearGameplayNarrative();
             _narrative.QueueThought("……又是 99 层。楼梯根本出不去。", 3.3f);
-            _narrative.QueueThought("电量只有 16 格，绝对撑不到一楼。", 3.5f);
+            _narrative.QueueThought("电量只有 " + Mathf.CeilToInt(InitialPower) +
+                " 格，绝对撑不到一楼。", 3.5f);
             _narrative.QueueThought("外面的楼层也许有应急电池。我得先找一块。", 3.4f);
         }
 
@@ -1379,8 +1389,9 @@ namespace NinetyNine
                     _carriedCellCharge = item.ItemKind == EvacuationItemKind.PowerCell
                         ? FullCellCharge : EmergencyCellCharge;
                     ShowTransientMessage(item.ItemKind == EvacuationItemKind.PowerCell
-                        ? "完整电池很重。带回电梯可恢复 12 电量。"
-                        : "破损电池仍有余电。带回电梯可恢复 6 电量。", 1.7f);
+                        ? "完整电池很重。带回电梯可恢复 " + FormatAmount(FullCellCharge) + " 电量。"
+                        : "破损电池仍有余电。带回电梯可恢复 " + FormatAmount(EmergencyCellCharge) +
+                            " 电量。", 1.7f);
                     break;
                 case EvacuationItemKind.Medkit:
                     _health = Mathf.Min(100f, _health + 38f);
@@ -1456,7 +1467,7 @@ namespace NinetyNine
                     _carryingCell = false;
                     _carriedCellCharge = 0f;
                     _audio.PlayPickup();
-                    ShowSystemMessage("电池已接入。当前电量 " + Mathf.CeilToInt(_power) + " / 26。", 1.6f);
+                    ShowSystemMessage("电池已接入。当前电量 " + FormatPower(_power) + "。", 1.6f);
                 }
                 else if (!_storedCell)
                 {
@@ -1494,9 +1505,10 @@ namespace NinetyNine
             }
             _hasFuse = false;
             _doorIntegrity = MaxDoorIntegrity;
-            ChangePower(_power + 3f, "备用线路", false);
+            ChangePower(_power + FusePowerRefund, "备用线路", false);
             _audio.PlayPickup();
-            ShowSystemMessage("门控恢复，备用线路返还 3 点电力。", 1.5f);
+            ShowSystemMessage("门控恢复，备用线路返还 " + FormatAmount(FusePowerRefund) +
+                " 点电力。", 1.5f);
         }
 
         private void UsePowerExchange(EvacuationInteractable machine)
@@ -1506,18 +1518,22 @@ namespace NinetyNine
             if (_scrap > 0)
             {
                 _scrap--;
-                recovered = 4f;
-                ShowTransientMessage("交换机吞下零件，向电梯线路返还 4 点电力。", 2f);
+                recovered = ScrapExchangePower;
+                ShowTransientMessage("交换机吞下零件，向电梯线路返还 " +
+                    FormatAmount(ScrapExchangePower) + " 点电力。", 2f);
             }
-            else if (_flashCharge >= 15f)
+            else if (_flashCharge >= FlashExchangeCost)
             {
-                _flashCharge -= 15f;
-                recovered = 2.5f;
-                ShowTransientMessage("你拆下手电电池接入交换机：电梯 +2.5，手电 -15。", 2.2f);
+                _flashCharge -= FlashExchangeCost;
+                recovered = FlashExchangePower;
+                ShowTransientMessage("你拆下手电电池接入交换机：电梯 +" +
+                    FormatAmount(FlashExchangePower) + "，手电 -" +
+                    FormatAmount(FlashExchangeCost) + "。", 2.2f);
             }
             else
             {
-                ShowTransientMessage("交换机需要一份零件，或至少 15 点手电电量。", 1.8f);
+                ShowTransientMessage("交换机需要一份零件，或至少 " +
+                    FormatAmount(FlashExchangeCost) + " 点手电电量。", 1.8f);
                 return;
             }
             ChangePower(_power + recovered, "电力交换", false);
@@ -1537,9 +1553,10 @@ namespace NinetyNine
             }
             _parasiteActive = false;
             _world.SetParasiteActive(false);
-            _health = Mathf.Max(1f, _health - 6f);
+            _health = Mathf.Max(1f, _health - ParasiteRemovalDamage);
             _audio.PlayHit();
-            ShowTransientMessage("寄生物割伤了手，但持续漏电已经停止。生命 -6。", 2.1f);
+            ShowTransientMessage("寄生物割伤了手，但持续漏电已经停止。生命 -" +
+                FormatAmount(ParasiteRemovalDamage) + "。", 2.1f);
         }
 
         private void UpdateFlashlight()
@@ -1616,8 +1633,10 @@ namespace NinetyNine
             _world.RemoveMonster(monster);
             _audio.PlayDoor();
             ShowTransientMessage(_doorIntegrity <= 0
-                ? "门机过载挡住了它，但控制器烧毁：-2.5 电力。下一层必须寻找保险丝。"
-                : "门机过载阻挡了它：-2.5 电力，门控耐久 " + _doorIntegrity + " / " + MaxDoorIntegrity + "。", 2.4f);
+                ? "门机过载挡住了它，但控制器烧毁：-" + FormatAmount(MonsterRepelCost) +
+                    " 电力。下一层必须寻找保险丝。"
+                : "门机过载阻挡了它：-" + FormatAmount(MonsterRepelCost) + " 电力，门控耐久 " +
+                    _doorIntegrity + " / " + MaxDoorIntegrity + "。", 2.4f);
         }
 
         public void NpcBoarded(EvacuationNpc npc)
@@ -1716,8 +1735,9 @@ namespace NinetyNine
                 else if (_dialogueNpc.Trade())
                 {
                     _scrap--;
-                    ChangePower(_power + 3.5f, "乘客交易", false);
-                    _dialogueText = "对方接过零件，为电梯电池接入了一段备用线：+3.5 电力。";
+                    ChangePower(_power + PassengerTradePower, "乘客交易", false);
+                    _dialogueText = "对方接过零件，为电梯电池接入了一段备用线：+" +
+                        FormatAmount(PassengerTradePower) + " 电力。";
                 }
                 else
                 {
@@ -2103,7 +2123,7 @@ namespace NinetyNine
             }
             return "本次复盘：抵达 " + _currentFloor + " 层 · 探索 " + _floorsVisited +
                 " 层 · 线索 " + (_story != null ? _story.ClueCount : 0) + " · 救出 " + _rescued +
-                " · 剩余电量 " + Mathf.CeilToInt(_power) + " / " + Mathf.CeilToInt(MaxPower) +
+                " · 剩余电量 " + FormatPower(_power) +
                 "\n下一局建议：" + advice;
         }
 
@@ -2166,7 +2186,7 @@ namespace NinetyNine
                 ? displayedDelta.ToString("0")
                 : displayedDelta.ToString("0.#");
             _powerNoticeText = reason + "  " + sign + value +
-                "    当前 " + currentBucket + " / " + Mathf.CeilToInt(MaxPower);
+                "    当前 " + FormatPower(currentBucket);
             _powerNoticeDeltaText = sign + value;
             _powerNoticeUntil = Time.unscaledTime + (continuous ? 1.05f : 1.7f);
             if (_audio != null && _powerNoticePositive) _audio.PlayPowerTick(true);
@@ -2317,7 +2337,8 @@ namespace NinetyNine
                 EndingTitle = _endingTitle,
                 EndingBody = _endingBody,
                 EndingStats = "最深抵达  " + _currentFloor.ToString("00") + "F    ·    探索楼层  " +
-                    _floorsVisited + "\n收集线索  " + clueCount + " / 6    ·    救出人数  " + _rescued +
+                    _floorsVisited + "\n收集线索  " + clueCount + " / " +
+                    EvacuationStorySystem.TrueExitClues + "    ·    救出人数  " + _rescued +
                     "    ·    剩余电量  " + Mathf.CeilToInt(_power),
                 EndingPrompt = BuildEndingPrompt(clueCount),
                 EndingRecord = _endingRecordText,
@@ -2374,7 +2395,7 @@ namespace NinetyNine
             }
             if (_power <= LowPowerWarning)
             {
-                return "警告：电梯电量不足  " + Mathf.CeilToInt(_power) + " / " + Mathf.CeilToInt(MaxPower);
+                return "警告：电梯电量不足  " + FormatPower(_power);
             }
             if (_remainingTime <= LowTimeWarning)
             {
@@ -2390,16 +2411,28 @@ namespace NinetyNine
             return minutes.ToString("00") + ":" + seconds.ToString("00");
         }
 
+        private static string FormatPower(float power)
+        {
+            return Mathf.CeilToInt(power) + " / " + Mathf.CeilToInt(MaxPower);
+        }
+
+        private static string FormatAmount(float value)
+        {
+            return value.ToString("0.#");
+        }
+
         private string BuildEndingPrompt(int clueCount)
         {
             if (_phase == EvacuationPhase.Won)
             {
                 if (_endingTitle == "终止第 99 次循环")
                     return "你看见了真正的清晨。但另一个种子里，大楼会重新排列所有楼层。";
-                return "大楼仍在运行。集齐 6 条线索并带一名幸存者离开，或许能终止循环。";
+                return "大楼仍在运行。集齐 " + EvacuationStorySystem.TrueExitClues +
+                    " 条线索并带一名幸存者离开，或许能终止循环。";
             }
-            if (clueCount < 3)
-                return "下一次至少带回 3 条记录，否则一楼只会把你送回第 99 层。";
+            if (clueCount < EvacuationStorySystem.MinimumExitClues)
+                return "下一次至少带回 " + EvacuationStorySystem.MinimumExitClues +
+                    " 条记录，否则一楼只会把你送回第 99 层。";
             if (_currentFloor > 1)
                 return "距离一楼还剩 " + (_currentFloor - 1) + " 层。换个种子，物资与异常都会重新洗牌。";
             return _endingDebrief.Replace("本次复盘：", string.Empty).Replace("\n下一局建议：", "  ·  ");
@@ -2498,8 +2531,7 @@ namespace NinetyNine
             if (_cachedHudPower != powerValue)
             {
                 _cachedHudPower = powerValue;
-                _cachedHudPowerText = powerValue.ToString("00") + " / " +
-                    Mathf.CeilToInt(MaxPower);
+                _cachedHudPowerText = powerValue.ToString("00") + " / " + Mathf.CeilToInt(MaxPower);
             }
             int timeValue = Mathf.Max(0, Mathf.FloorToInt(_remainingTime));
             if (_cachedHudSeconds != timeValue)
@@ -2622,7 +2654,7 @@ namespace NinetyNine
                 bool critical = _power <= CriticalPowerWarning;
                 string warning = critical
                     ? "致命警告：电梯电量即将耗尽"
-                    : "警告：电梯电量不足  " + Mathf.CeilToInt(_power) + " / " + Mathf.CeilToInt(MaxPower);
+                    : "警告：电梯电量不足  " + FormatPower(_power);
                 DrawHudWarning(warning, critical, ref y, scale);
             }
             if (_remainingTime <= LowTimeWarning)
